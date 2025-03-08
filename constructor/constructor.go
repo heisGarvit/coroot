@@ -114,7 +114,7 @@ func (c *Constructor) LoadWorld(ctx context.Context, from, to timeseries.Time, s
 	prof.stage("load_app_incidents", func() { c.loadApplicationIncidents(w) })
 	prof.stage("calc_app_events", func() { calcAppEvents(w) })
 
-	klog.Infof("%s: got %d containers %d nodes, %d apps in %s", c.project.Id, len(containers), len(w.Nodes), len(w.Applications), time.Since(start).Truncate(time.Millisecond))
+	klog.Infof("LoadWorld --> %s: got %d containers, %d nodes, %d apps in %s", c.project.Id, len(containers), len(w.Nodes), len(w.Applications), time.Since(start).Truncate(time.Millisecond))
 	return w, nil
 }
 

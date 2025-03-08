@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel"
 	"net"
 	"net/http"
 	"net/url"
@@ -107,6 +108,10 @@ func (c *Client) GetStep(from, to timeseries.Time) (timeseries.Duration, error) 
 }
 
 func (c *Client) QueryRange(ctx context.Context, query string, labels *utils.StringSet, from, to timeseries.Time, step timeseries.Duration) ([]*model.MetricValues, error) {
+	ctx, span := otel.Tracer("coroot").Start(ctx, "prom QueryRange")
+	defer span.End()
+
+	klog.Infof("calling prometheus query_range: %s", query)
 	query = strings.ReplaceAll(query, "$RANGE", fmt.Sprintf(`%.0fs`, (step*3).ToStandard().Seconds()))
 	var err error
 	query, err = addExtraSelector(query, c.config.ExtraSelector)
