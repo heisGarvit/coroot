@@ -38,7 +38,7 @@ var (
 )
 
 func init() {
-	d := net.Dialer{Timeout: 30 * time.Second}
+	d := net.Dialer{Timeout: 300 * time.Second}
 	secureTransport = &http.Transport{
 		DialContext:         d.DialContext,
 		TLSHandshakeTimeout: 10 * time.Second,
