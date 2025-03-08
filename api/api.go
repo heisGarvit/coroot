@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"go.opentelemetry.io/otel"
 	"net/http"
 	"slices"
 	"time"
@@ -1196,6 +1197,8 @@ func (api *Api) Node(w http.ResponseWriter, r *http.Request, u *db.User) {
 }
 
 func (api *Api) LoadWorld(ctx context.Context, project *db.Project, from, to timeseries.Time) (*model.World, *cache.Status, error) {
+	ctx, span := otel.Tracer("coroot").Start(ctx, "LoadWorld")
+	defer span.End()
 	cacheClient := api.cache.GetCacheClient(project.Id)
 
 	cacheStatus, err := cacheClient.GetStatus()
@@ -1230,6 +1233,8 @@ func (api *Api) LoadWorld(ctx context.Context, project *db.Project, from, to tim
 }
 
 func (api *Api) LoadWorldByRequest(r *http.Request) (*model.World, *db.Project, *cache.Status, error) {
+	ctx, span := otel.Tracer("coroot").Start(r.Context(), "LoadWorldByRequest")
+	defer span.End()
 	projectId := db.ProjectId(mux.Vars(r)["project"])
 	project, err := api.db.GetProject(projectId)
 	if err != nil {
@@ -1260,7 +1265,7 @@ func (api *Api) LoadWorldByRequest(r *http.Request) (*model.World, *db.Project, 
 		}
 	}
 
-	world, cacheStatus, err := api.LoadWorld(r.Context(), project, from, to)
+	world, cacheStatus, err := api.LoadWorld(ctx, project, from, to)
 	if world == nil {
 		step := increaseStepForBigDurations(to.Sub(from), 15*timeseries.Second)
 		world = model.NewWorld(from, to.Add(-step), step, step)

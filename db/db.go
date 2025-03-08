@@ -12,6 +12,7 @@ import (
 	_ "github.com/lib/pq"
 	"github.com/mattn/go-sqlite3"
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/uptrace/opentelemetry-go-extra/otelsql"
 )
 
 type Type string
@@ -35,7 +36,7 @@ type DB struct {
 }
 
 func NewSqlite(dataDir string) (*DB, error) {
-	db, err := sql.Open("sqlite3", fmt.Sprintf("file:%s?mode=rwc", path.Join(dataDir, "db.sqlite")))
+	db, err := otelsql.Open("sqlite3", fmt.Sprintf("file:%s?mode=rwc", path.Join(dataDir, "db.sqlite")))
 	if err != nil {
 		return nil, err
 	}
@@ -47,7 +48,7 @@ func NewSqlite(dataDir string) (*DB, error) {
 }
 
 func NewPostgres(dsn string) (*DB, error) {
-	db, err := sql.Open("postgres", dsn)
+	db, err := otelsql.Open("postgres", dsn)
 	if err != nil {
 		return nil, err
 	}

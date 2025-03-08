@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"io"
 	"net/http"
 	"net/url"
@@ -17,13 +18,13 @@ import (
 )
 
 var (
-	secureClient = &http.Client{Transport: &http.Transport{
+	secureClient = &http.Client{Transport: otelhttp.NewTransport(&http.Transport{
 		TLSHandshakeTimeout: 10 * time.Second,
-	}}
-	insecureClient = &http.Client{Transport: &http.Transport{
+	})}
+	insecureClient = &http.Client{Transport: otelhttp.NewTransport(&http.Transport{
 		TLSHandshakeTimeout: 10 * time.Second,
 		TLSClientConfig:     &tls.Config{InsecureSkipVerify: true},
-	}}
+	})}
 )
 
 func addLabelsIfNeeded(r *http.Request, extraLabels map[string]string) (io.Reader, error) {
