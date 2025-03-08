@@ -2,6 +2,7 @@ package watchers
 
 import (
 	"context"
+	"go.opentelemetry.io/otel"
 	"sync"
 	"time"
 
@@ -28,6 +29,8 @@ func Start(db *db.DB, cache *cache.Cache, pricing *pricing.Manager, checkInciden
 	}
 
 	go func() {
+		ctx, span := otel.Tracer("coroot").Start(context.Background(), "cache.Updates Watcher")
+		defer span.End()
 		for projectId := range cache.Updates() {
 			if !db.GetPrimaryLock(context.TODO()) {
 				klog.Infoln("not the primary replica: skipping")
@@ -41,7 +44,7 @@ func Start(db *db.DB, cache *cache.Cache, pricing *pricing.Manager, checkInciden
 				continue
 			}
 			cacheClient := cache.GetCacheClient(project.Id)
-			cacheTo, err := cacheClient.GetTo()
+			cacheTo, err := cacheClient.GetTo(ctx)
 			if err != nil {
 				klog.Errorln(err)
 				continue
@@ -51,7 +54,7 @@ func Start(db *db.DB, cache *cache.Cache, pricing *pricing.Manager, checkInciden
 			}
 			to := cacheTo
 			from := to.Add(-timeseries.Hour)
-			step, err := cacheClient.GetStep(from, to)
+			step, err := cacheClient.GetStep(ctx, from, to)
 			if err != nil {
 				klog.Errorln(err)
 				continue

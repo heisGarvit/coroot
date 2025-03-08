@@ -1,8 +1,10 @@
 package cache
 
 import (
+	"context"
 	"database/sql"
 	"errors"
+	"go.opentelemetry.io/otel"
 	"os"
 	"path"
 
@@ -100,7 +102,9 @@ func (c *Cache) getMinUpdateTime(projectId db.ProjectId) (timeseries.Time, error
 	return timeseries.Time(min.Int64), nil
 }
 
-func (c *Cache) getStatus(projectId db.ProjectId) (*Status, error) {
+func (c *Cache) getStatus(ctx context.Context, projectId db.ProjectId) (*Status, error) {
+	_, span := otel.Tracer("coroot").Start(ctx, "Cache getStatus")
+	defer span.End()
 	var s Status
 	err := c.state.QueryRow("SELECT last_error FROM prometheus_query_state WHERE project_id = $1 AND last_error != '' LIMIT 1", projectId).Scan(&s.Error)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {

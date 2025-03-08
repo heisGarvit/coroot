@@ -3,6 +3,7 @@ package cache
 import (
 	"context"
 	"fmt"
+	"go.opentelemetry.io/otel"
 	"sort"
 
 	"github.com/coroot/coroot/cache/chunk"
@@ -58,7 +59,9 @@ func (c *Client) QueryRange(ctx context.Context, query string, from, to timeseri
 	return maps.Values(res), nil
 }
 
-func (c *Client) GetStep(from, to timeseries.Time) (timeseries.Duration, error) {
+func (c *Client) GetStep(ctx context.Context, from, to timeseries.Time) (timeseries.Duration, error) {
+	_, span := otel.Tracer("coroot").Start(ctx, "CacheClient GetStep")
+	defer span.End()
 	c.cache.lock.RLock()
 	defer c.cache.lock.RUnlock()
 	projData := c.cache.byProject[c.projectId]
@@ -83,7 +86,9 @@ func (c *Client) GetStep(from, to timeseries.Time) (timeseries.Duration, error) 
 	return step, nil
 }
 
-func (c *Client) GetTo() (timeseries.Time, error) {
+func (c *Client) GetTo(ctx context.Context) (timeseries.Time, error) {
+	ctx, span := otel.Tracer("coroot").Start(ctx, "CacheClient GetTo")
+	defer span.End()
 	to, err := c.cache.getMinUpdateTime(c.projectId)
 	if err != nil {
 		return 0, err
@@ -104,6 +109,6 @@ func (c *Client) GetTo() (timeseries.Time, error) {
 	return to.Add(-step), nil
 }
 
-func (c *Client) GetStatus() (*Status, error) {
-	return c.cache.getStatus(c.projectId)
+func (c *Client) GetStatus(ctx context.Context) (*Status, error) {
+	return c.cache.getStatus(ctx, c.projectId)
 }

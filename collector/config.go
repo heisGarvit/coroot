@@ -26,7 +26,7 @@ func (c *Collector) Config(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cacheClient := c.cache.GetCacheClient(project.Id)
-	cacheTo, err := cacheClient.GetTo()
+	cacheTo, err := cacheClient.GetTo(r.Context())
 	if err != nil {
 		klog.Errorln(err)
 		http.Error(w, "", http.StatusInternalServerError)
@@ -37,7 +37,7 @@ func (c *Collector) Config(w http.ResponseWriter, r *http.Request) {
 	}
 	to := cacheTo
 	from := to.Add(-timeseries.Hour)
-	step, err := cacheClient.GetStep(from, to)
+	step, err := cacheClient.GetStep(r.Context(), from, to)
 	if err != nil {
 		klog.Errorln(err)
 		http.Error(w, "", http.StatusInternalServerError)
