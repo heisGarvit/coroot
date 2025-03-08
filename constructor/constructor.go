@@ -3,6 +3,7 @@ package constructor
 import (
 	"context"
 	"fmt"
+	"go.opentelemetry.io/otel"
 	"net"
 	"strings"
 	"sync"
@@ -150,6 +151,8 @@ type cacheQuery struct {
 }
 
 func (c *Constructor) queryCache(ctx context.Context, from, to timeseries.Time, step, rawStep timeseries.Duration, checkConfigs model.CheckConfigs, stats map[string]QueryStats) (map[string][]*model.MetricValues, error) {
+	ctx, span := otel.Tracer("coroot").Start(ctx, "queryCache")
+	defer span.End()
 	loadRawSLIs := !c.options[OptionDoNotLoadRawSLIs]
 	rawFrom := from
 	if t := to.Add(-model.MaxAlertRuleWindow); t.Before(rawFrom) {

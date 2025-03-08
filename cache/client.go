@@ -26,7 +26,15 @@ type Client struct {
 }
 
 func (c *Client) QueryRange(ctx context.Context, query string, from, to timeseries.Time, step timeseries.Duration, fillFunc timeseries.FillFunc) ([]*model.MetricValues, error) {
-	c.cache.lock.RLock()
+	ctx, span := otel.Tracer("coroot").Start(ctx, "CacheClient QueryRange")
+	defer span.End()
+
+	func() {
+		_, span := otel.Tracer("cache").Start(ctx, "CacheClient QueryRange Acquire RLock")
+		c.cache.lock.RLock()
+		span.End()
+	}()
+
 	defer c.cache.lock.RUnlock()
 	projData := c.cache.byProject[c.projectId]
 	if projData == nil {
