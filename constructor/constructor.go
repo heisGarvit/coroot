@@ -27,7 +27,7 @@ const (
 
 type Cache interface {
 	QueryRange(ctx context.Context, query string, from, to timeseries.Time, step timeseries.Duration, fillFunc timeseries.FillFunc) ([]*model.MetricValues, error)
-	GetStep(from, to timeseries.Time) (timeseries.Duration, error)
+	GetStep(ctx context.Context, from, to timeseries.Time) (timeseries.Duration, error)
 }
 
 type Constructor struct {
@@ -48,7 +48,7 @@ func New(db *db.DB, project *db.Project, cache Cache, pricing *pricing.Manager, 
 
 func (c *Constructor) LoadWorld(ctx context.Context, from, to timeseries.Time, step timeseries.Duration, prof *Profile) (*model.World, error) {
 	start := time.Now()
-	rawStep, err := c.cache.GetStep(from, to)
+	rawStep, err := c.cache.GetStep(ctx, from, to)
 	if err != nil {
 		return nil, err
 	}

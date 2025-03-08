@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"go.opentelemetry.io/otel"
 	"io"
 	"net/http"
 	"runtime/pprof"
@@ -242,7 +243,9 @@ func (c *Collector) send() {
 	}
 	from := time.Now()
 
-	stats := c.collect()
+	ctx, span := otel.Tracer("coroot").Start(context.Background(), "Collector send")
+	defer span.End()
+	stats := c.collect(ctx)
 
 	stats.Profile.From = from.Unix()
 	stats.Profile.To = time.Now().Unix()
@@ -268,7 +271,7 @@ func (c *Collector) send() {
 	_ = res.Body.Close()
 }
 
-func (c *Collector) collect() Stats {
+func (c *Collector) collect(ctx context.Context) Stats {
 	stats := Stats{}
 
 	stats.Instance.Uuid = c.instanceUuid
@@ -370,7 +373,7 @@ func (c *Collector) collect() Stats {
 		}
 
 		cacheClient := c.cache.GetCacheClient(p.Id)
-		cacheTo, err := cacheClient.GetTo()
+		cacheTo, err := cacheClient.GetTo(ctx)
 		if err != nil {
 			klog.Errorln(err)
 			continue
@@ -381,7 +384,7 @@ func (c *Collector) collect() Stats {
 		t := time.Now()
 		to := cacheTo
 		from := to.Add(-worldWindow)
-		step, err := cacheClient.GetStep(from, to)
+		step, err := cacheClient.GetStep(ctx, from, to)
 		if err != nil {
 			klog.Errorln(err)
 			continue

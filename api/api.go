@@ -1197,16 +1197,16 @@ func (api *Api) Node(w http.ResponseWriter, r *http.Request, u *db.User) {
 }
 
 func (api *Api) LoadWorld(ctx context.Context, project *db.Project, from, to timeseries.Time) (*model.World, *cache.Status, error) {
-	ctx, span := otel.Tracer("coroot").Start(ctx, "LoadWorld")
+	ctx, span := otel.Tracer("coroot").Start(ctx, "Api LoadWorld")
 	defer span.End()
 	cacheClient := api.cache.GetCacheClient(project.Id)
 
-	cacheStatus, err := cacheClient.GetStatus()
+	cacheStatus, err := cacheClient.GetStatus(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	cacheTo, err := cacheClient.GetTo()
+	cacheTo, err := cacheClient.GetTo(ctx)
 	if err != nil {
 		return nil, cacheStatus, err
 	}
@@ -1215,7 +1215,7 @@ func (api *Api) LoadWorld(ctx context.Context, project *db.Project, from, to tim
 		return nil, cacheStatus, nil
 	}
 
-	step, err := cacheClient.GetStep(from, to)
+	step, err := cacheClient.GetStep(ctx, from, to)
 	if err != nil {
 		return nil, cacheStatus, err
 	}
