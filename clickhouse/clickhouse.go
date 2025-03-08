@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"go.opentelemetry.io/otel"
 	"net"
 	"time"
 
@@ -82,6 +83,8 @@ func (c *Client) Ping(ctx context.Context) error {
 }
 
 func (c *Client) Query(ctx context.Context, query string, args ...interface{}) (driver.Rows, error) {
+	ctx, span := otel.Tracer("coroot").Start(ctx, "ClickhouseQuery")
+	defer span.End()
 	query = collector.ReplaceTables(query, c.useDistributedTables)
 	return c.conn.Query(ctx, query, args...)
 }

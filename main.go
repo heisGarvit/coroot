@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"embed"
 	"fmt"
+	"go.opentelemetry.io/otel"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
@@ -23,6 +24,8 @@ import (
 	"github.com/coroot/coroot/utils"
 	"github.com/coroot/coroot/watchers"
 	"github.com/gorilla/mux"
+	"go.elastic.co/apm/module/apmotel/v2"
+	"go.opentelemetry.io/contrib/instrumentation/github.com/gorilla/mux/otelmux"
 	"golang.org/x/term"
 	"gopkg.in/alecthomas/kingpin.v2"
 	"k8s.io/klog"
@@ -34,6 +37,12 @@ var version = "unknown"
 var static embed.FS
 
 func main() {
+	provider, err := apmotel.NewTracerProvider()
+	if err != nil {
+		klog.Fatalln(err)
+	}
+	otel.SetTracerProvider(provider)
+
 	kingpin.Command("run", "Run Coroot server").Default()
 	cmdSetAdminPassword := kingpin.Command("set-admin-password", "Set password for the default Admin user")
 
@@ -43,7 +52,6 @@ func main() {
 
 	cfg := config.Load()
 
-	var err error
 	if err = utils.CreateDirectoryIfNotExists(cfg.DataDir); err != nil {
 		klog.Exitln(err)
 	}
@@ -187,6 +195,9 @@ func main() {
 	})
 
 	router.PathPrefix("").Handler(http.RedirectHandler(cfg.UrlBasePath, http.StatusMovedPermanently))
+
+	// Initialize the instrumentation middleware
+	router.Use(otelmux.Middleware(os.Getenv("OTEL_SERVICE_NAME")))
 
 	klog.Infoln("listening on", cfg.ListenAddress)
 	klog.Fatalln(http.ListenAndServe(cfg.ListenAddress, router))

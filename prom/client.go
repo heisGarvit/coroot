@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"net"
 	"net/http"
 	"net/url"
@@ -90,7 +91,7 @@ func NewClient(config ClientConfig) (*Client, error) {
 	c := &Client{
 		config:     config,
 		url:        *u,
-		httpClient: &http.Client{Transport: tr},
+		httpClient: &http.Client{Transport: otelhttp.NewTransport(tr)},
 	}
 	return c, nil
 }
