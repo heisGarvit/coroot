@@ -102,7 +102,7 @@ type containerCache struct {
 	container *model.Container
 }
 
-func (c *Constructor) loadContainers(w *model.World, metrics map[string][]*model.MetricValues, pjs promJobStatuses, nodes nodeCache, containers *utils.ConcurrentMap[model.NodeContainerId, *containerCache], servicesByClusterIP map[string]*model.Service, ip2fqdn map[string]*utils.StringSet) {
+func (c *Constructor) loadContainers(w *model.World, metrics map[string][]*model.MetricValues, pjs promJobStatuses, nodes nodeCache, containers *utils.ConcurrentMap[model.NodeContainerId, containerCache], servicesByClusterIP map[string]*model.Service, ip2fqdn map[string]*utils.StringSet) {
 	t := time.Now()
 
 	shardingFn := func(instance instanceId) uint32 {
@@ -133,10 +133,13 @@ func (c *Constructor) loadContainers(w *model.World, metrics map[string][]*model
 			waitGroup.Add(1)
 			go func(m *model.MetricValues) {
 				defer waitGroup.Done()
+
 				v, ok := containers.Load(m.NodeContainerId)
 				if !ok {
 					nodeId := model.NewNodeIdFromLabels(m)
 					v.instance, v.container = c.getInstanceAndContainer(w, nodes[nodeId], &instances, m.ContainerId)
+					containers.Store(m.NodeContainerId, v)
+					syncRWLock.Unlock()
 				}
 				if v.instance == nil || v.container == nil {
 					return

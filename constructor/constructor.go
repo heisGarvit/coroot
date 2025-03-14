@@ -89,7 +89,7 @@ func (c *Constructor) LoadWorld(ctx context.Context, from, to timeseries.Time, s
 	shardingFn := func(m model.NodeContainerId) uint32 {
 		return utils.Fnv32(m.ContainerId)
 	}
-	containers := utils.NewConcurrentMap[model.NodeContainerId, *containerCache](shardingFn, 32)
+	containers := utils.NewConcurrentMap[model.NodeContainerId, containerCache](shardingFn, 32)
 
 	// order is important
 	prof.stage("load_job_statuses", func() { loadPromJobStatuses(metrics, pjs) })

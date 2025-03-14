@@ -8,7 +8,7 @@ import (
 	"github.com/coroot/coroot/timeseries"
 )
 
-func (c *Constructor) loadJVM(metrics map[string][]*model.MetricValues, containers *utils.ConcurrentMap[model.NodeContainerId, *containerCache]) {
+func (c *Constructor) loadJVM(metrics map[string][]*model.MetricValues, containers *utils.ConcurrentMap[model.NodeContainerId, containerCache]) {
 	load := func(queryName string, f func(jvm *model.Jvm, metric *model.MetricValues)) {
 		for _, metric := range metrics[queryName] {
 			v, ok := containers.Load(metric.NodeContainerId)
