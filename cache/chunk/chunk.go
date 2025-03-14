@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"github.com/coroot/coroot/utils"
 	"io"
 	"os"
 	"unsafe"
@@ -83,7 +84,7 @@ func ReadMeta(path string) (*Meta, error) {
 	}, err
 }
 
-func Read(path string, from timeseries.Time, pointsCount int, step timeseries.Duration, dest map[uint64]*model.MetricValues, fillFunc timeseries.FillFunc) error {
+func Read(path string, from timeseries.Time, pointsCount int, step timeseries.Duration, dest utils.ConcurrentMap[uint64, *model.MetricValues], fillFunc timeseries.FillFunc) error {
 	f, err := os.Open(path)
 	if err != nil {
 		return err
@@ -105,7 +106,7 @@ func Read(path string, from timeseries.Time, pointsCount int, step timeseries.Du
 	}
 }
 
-func readV3(reader io.Reader, header *header, from timeseries.Time, pointsCount int, step timeseries.Duration, dest map[uint64]*model.MetricValues, fillFunc timeseries.FillFunc) error {
+func readV3(reader io.Reader, header *header, from timeseries.Time, pointsCount int, step timeseries.Duration, dest utils.ConcurrentMap[uint64, *model.MetricValues], fillFunc timeseries.FillFunc) error {
 	r := lz4.NewDecompressReader(reader)
 	defer r.Close()
 	buf := make([]byte, metricMetaSize+4*header.PointsCount)
@@ -121,7 +122,7 @@ func readV3(reader io.Reader, header *header, from timeseries.Time, pointsCount 
 			MetaOffset: binary.LittleEndian.Uint32(buf[8:]),
 			MetaSize:   binary.LittleEndian.Uint32(buf[12:]),
 		}
-		mv, ok := dest[m.Hash]
+		mv, ok := dest.Load(m.Hash)
 		if mv == nil {
 			mv = &model.MetricValues{
 				Values: timeseries.New(from, pointsCount, step),
@@ -134,13 +135,13 @@ func readV3(reader io.Reader, header *header, from timeseries.Time, pointsCount 
 		if !fillFunc(mv.Values, header.From, header.Step, asFloats32(buf[metricMetaSize:])) && !ok {
 			continue
 		}
-		dest[m.Hash] = mv
+		dest.Store(m.Hash, mv)
 	}
 	if len(labelsToRead) > 0 {
 		buf = make([]byte, maxLabelSize)
 		offset := uint32(0)
 		for _, m := range labelsToRead {
-			mv, ok := dest[m.Hash]
+			mv, ok := dest.Load(m.Hash)
 			if !ok {
 				continue
 			}
@@ -157,7 +158,7 @@ func readV3(reader io.Reader, header *header, from timeseries.Time, pointsCount 
 			mv.LabelsHash = m.Hash
 			mv.Labels = make(model.Labels)
 			readLabels(buf[:m.MetaSize], mv)
-			dest[m.Hash] = mv
+			dest.Store(m.Hash, mv)
 		}
 	}
 	return nil

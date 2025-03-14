@@ -82,6 +82,66 @@ func (m ConcurrentMap[K, V]) Count() int {
 	return count
 }
 
+func (m ConcurrentMap[K, V]) Keys() []K {
+	count := m.Count()
+	ch := make(chan K, count)
+	go func() {
+		// Foreach shard.
+		wg := sync.WaitGroup{}
+		wg.Add(m.shardCount)
+		for _, shard := range m.shards {
+			go func(shard *ConcurrentMapShared[K, V]) {
+				// Foreach key, value pair.
+				shard.RLock()
+				for key := range shard.items {
+					ch <- key
+				}
+				shard.RUnlock()
+				wg.Done()
+			}(shard)
+		}
+		wg.Wait()
+		close(ch)
+	}()
+
+	// Generate keys
+	keys := make([]K, 0, count)
+	for k := range ch {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
+func (m ConcurrentMap[KeyType, ValueType]) Values() []ValueType {
+	count := m.Count()
+	ch := make(chan ValueType, count)
+	go func() {
+		// Foreach shard.
+		wg := sync.WaitGroup{}
+		wg.Add(m.shardCount)
+		for _, shard := range m.shards {
+			go func(shard *ConcurrentMapShared[KeyType, ValueType]) {
+				// Foreach key, value pair.
+				shard.RLock()
+				for _, value := range shard.items {
+					ch <- value
+				}
+				shard.RUnlock()
+				wg.Done()
+			}(shard)
+		}
+		wg.Wait()
+		close(ch)
+	}()
+
+	// Generate keys
+	values := make([]ValueType, 0, count)
+	for v := range ch {
+		values = append(values, v)
+	}
+	return values
+}
+
 func Fnv32(key string) uint32 {
 	hash := uint32(2166136261)
 	const prime32 = uint32(16777619)

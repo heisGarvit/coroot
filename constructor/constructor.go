@@ -52,12 +52,19 @@ func (c *Constructor) LoadWorld(ctx context.Context, from, to timeseries.Time, s
 	if err != nil {
 		return nil, err
 	}
+
+	klog.Infof("WorldLoaded rawStep in %d ms", time.Since(start).Milliseconds())
+
 	if rawStep == 0 {
 		return model.NewWorld(from, to, step, step), nil
 	}
+	klog.Infof("WorldLoaded NewWorld %d ms", time.Since(start).Milliseconds())
+
 	w := model.NewWorld(from, to, step, rawStep)
 	w.CustomApplications = c.project.Settings.CustomApplications
 	w.Categories = maps.Keys(c.project.Settings.ApplicationCategories)
+
+	klog.Infof("WorldLoaded model.NewWorld %d ms", time.Since(start).Milliseconds())
 
 	if prof == nil {
 		prof = &Profile{}
@@ -77,6 +84,7 @@ func (c *Constructor) LoadWorld(ctx context.Context, from, to timeseries.Time, s
 	if err != nil {
 		return nil, err
 	}
+	klog.Infof("WorldLoaded query metrics queryCache %d ms", time.Since(start).Milliseconds())
 
 	pjs := promJobStatuses{}
 
@@ -98,30 +106,55 @@ func (c *Constructor) LoadWorld(ctx context.Context, from, to timeseries.Time, s
 
 	// order is important
 	prof.stage("load_job_statuses", func() { loadPromJobStatuses(metrics, pjs) })
+	klog.Infof("WorldLoaded load_job_statuses in %d ms", time.Since(start).Milliseconds())
 	prof.stage("load_nodes", func() { c.loadNodes(w, metrics, nodes) })
+	klog.Infof("WorldLoaded load_nodes in %d ms", time.Since(start).Milliseconds())
 	prof.stage("load_fqdn", func() { loadFQDNs(metrics, ip2fqdn) })
+	klog.Infof("WorldLoaded load_fqdn in %d ms", time.Since(start).Milliseconds())
 	prof.stage("load_fargate_nodes", func() { c.loadFargateNodes(metrics, nodes) })
+	klog.Infof("WorldLoaded load_fargate_nodes in %d ms", time.Since(start).Milliseconds())
 	prof.stage("load_k8s_metadata", func() { loadKubernetesMetadata(w, metrics, servicesByClusterIP) })
+	klog.Infof("WorldLoaded load_k8s_metadata in %d ms", time.Since(start).Milliseconds())
 	prof.stage("load_aws_status", func() { loadAWSStatus(w, metrics) })
+	klog.Infof("WorldLoaded load_aws_status in %d ms", time.Since(start).Milliseconds())
 	prof.stage("load_rds_metadata", func() { loadRdsMetadata(w, metrics, pjs, rdsInstancesById) })
+	klog.Infof("WorldLoaded load_rds_metadata in %d ms", time.Since(start).Milliseconds())
 	prof.stage("load_elasticache_metadata", func() { loadElasticacheMetadata(w, metrics, pjs, ecInstancesById) })
+	klog.Infof("WorldLoaded load_elasticache_metadata in %d ms", time.Since(start).Milliseconds())
 	prof.stage("load_rds", func() { c.loadRds(w, metrics, pjs, rdsInstancesById) })
+	klog.Infof("WorldLoaded load_rds in %d ms", time.Since(start).Milliseconds())
 	prof.stage("load_elasticache", func() { c.loadElasticache(w, metrics, pjs, ecInstancesById) })
+	klog.Infof("WorldLoaded load_elasticache in %d ms", time.Since(start).Milliseconds())
 	prof.stage("load_fargate_containers", func() { loadFargateContainers(w, metrics, pjs) })
+	klog.Infof("WorldLoaded load_fargate_containers in %d ms", time.Since(start).Milliseconds())
 	prof.stage("load_containers", func() { c.loadContainers(w, metrics, pjs, nodes, &containers, servicesByClusterIP, ip2fqdn) })
+	klog.Infof("WorldLoaded load_containers in %d ms", time.Since(start).Milliseconds())
 	prof.stage("load_jvm", func() { c.loadJVM(metrics, &containers) })
+	klog.Infof("WorldLoaded load_jvm in %d ms", time.Since(start).Milliseconds())
 	prof.stage("load_dotnet", func() { c.loadDotNet(metrics, &containers) })
+	klog.Infof("WorldLoaded load_dotnet in %d ms", time.Since(start).Milliseconds())
 	prof.stage("load_python", func() { c.loadPython(metrics, &containers) })
+	klog.Infof("WorldLoaded load_python in %d ms", time.Since(start).Milliseconds())
 	prof.stage("enrich_instances", func() { enrichInstances(w, metrics, rdsInstancesById, ecInstancesById) })
+	klog.Infof("WorldLoaded enrich_instances in %d ms", time.Since(start).Milliseconds())
 	prof.stage("join_db_cluster", func() { joinDBClusterComponents(w) })
+	klog.Infof("WorldLoaded join_db_cluster in %d ms", time.Since(start).Milliseconds())
 	prof.stage("calc_app_categories", func() { c.calcApplicationCategories(w) })
+	klog.Infof("WorldLoaded calc_app_categories in %d ms", time.Since(start).Milliseconds())
 	prof.stage("load_app_settings", func() { c.loadApplicationSettings(w) })
+	klog.Infof("WorldLoaded load_app_settings in %d ms", time.Since(start).Milliseconds())
 	prof.stage("load_app_sli", func() { c.loadSLIs(w, metrics) })
+	klog.Infof("WorldLoaded load_app_sli in %d ms", time.Since(start).Milliseconds())
 	prof.stage("load_container_logs", func() { c.loadContainerLogs(metrics, &containers, pjs) })
+	klog.Infof("WorldLoaded load_container_logs in %d ms", time.Since(start).Milliseconds())
 	prof.stage("load_app_logs", func() { c.loadApplicationLogs(w, metrics) })
+	klog.Infof("WorldLoaded load_app_logs in %d ms", time.Since(start).Milliseconds())
 	prof.stage("load_app_deployments", func() { c.loadApplicationDeployments(w) })
+	klog.Infof("WorldLoaded load_app_deployments in %d ms", time.Since(start).Milliseconds())
 	prof.stage("load_app_incidents", func() { c.loadApplicationIncidents(w) })
+	klog.Infof("WorldLoaded load_app_incidents in %d ms", time.Since(start).Milliseconds())
 	prof.stage("calc_app_events", func() { calcAppEvents(w) })
+	klog.Infof("WorldLoaded calc_app_events in %d ms", time.Since(start).Milliseconds())
 
 	klog.Infof("LoadWorld --> %s: got %d containers, %d nodes, %d apps in %s", c.project.Id, containers.Count(), len(w.Nodes), len(w.Applications), time.Since(start).Truncate(time.Millisecond))
 	return w, nil
@@ -136,6 +169,7 @@ type cacheQuery struct {
 }
 
 func (c *Constructor) queryCache(ctx context.Context, from, to timeseries.Time, step, rawStep timeseries.Duration, checkConfigs model.CheckConfigs, stats map[string]QueryStats) (map[string][]*model.MetricValues, error) {
+	t := time.Now()
 	loadRawSLIs := !c.options[OptionDoNotLoadRawSLIs]
 	rawFrom := from
 	if t := to.Add(-model.MaxAlertRuleWindow); t.Before(rawFrom) {
@@ -234,6 +268,7 @@ func (c *Constructor) queryCache(ctx context.Context, from, to timeseries.Time, 
 		}(name, query)
 	}
 	wg.Wait()
+	klog.Infof("queryCache WaitGroup took --> %d ms --> len %d", time.Since(t).Milliseconds(), len(queries))
 	return res, lastErr
 }
 

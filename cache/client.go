@@ -3,7 +3,11 @@ package cache
 import (
 	"context"
 	"fmt"
+	"github.com/coroot/coroot/utils"
+	"k8s.io/klog"
 	"sort"
+	"sync"
+	"time"
 
 	"github.com/coroot/coroot/cache/chunk"
 	"github.com/coroot/coroot/db"
@@ -38,7 +42,12 @@ func (c *Client) QueryRange(ctx context.Context, query string, from, to timeseri
 	}
 	from = from.Truncate(step)
 	to = to.Truncate(step)
-	res := map[uint64]*model.MetricValues{}
+
+	shardingFn := func(_ uint64) uint32 {
+		return 1
+	}
+
+	res := utils.NewConcurrentMap[uint64, *model.MetricValues](shardingFn, 2)
 	resPoints := int(to.Sub(from)/step + 1)
 
 	chunks := maps.Values(qData.chunksOnDisk)
@@ -46,16 +55,23 @@ func (c *Client) QueryRange(ctx context.Context, query string, from, to timeseri
 		return chunks[i].Created < chunks[j].Created
 	})
 
+	t := time.Now()
+	wg := sync.WaitGroup{}
 	for _, ch := range chunks {
 		if ch.From > to || ch.To() < from {
 			continue
 		}
+		wg.Add(1)
 		err := chunk.Read(ch.Path, from, resPoints, step, res, fillFunc)
+		wg.Done()
 		if err != nil {
 			return nil, err
 		}
 	}
-	return maps.Values(res), nil
+	wg.Wait()
+
+	klog.Infof("query range chunks %d took %d ms", len(chunks), time.Since(t).Milliseconds())
+	return res.Values(), nil
 }
 
 func (c *Client) GetStep(from, to timeseries.Time) (timeseries.Duration, error) {

@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"github.com/coroot/coroot/utils"
 	"io"
 	"math"
 	"sync"
@@ -459,7 +460,7 @@ func readLabelsV4(r *bufio.Reader, hashes []uint64, missing map[uint64]*model.Me
 	return nil
 }
 
-func readV4(reader *bufio.Reader, h *header, from timeseries.Time, pointsCount int, step timeseries.Duration, dest map[uint64]*model.MetricValues, fillFunc timeseries.FillFunc) error {
+func readV4(reader *bufio.Reader, h *header, from timeseries.Time, pointsCount int, step timeseries.Duration, dest utils.ConcurrentMap[uint64, *model.MetricValues], fillFunc timeseries.FillFunc) error {
 	var err error
 	hashesBuf := make([]byte, int(h.DataSizeOrMetricsCount)*8)
 	if _, err = io.ReadFull(reader, hashesBuf); err != nil {
@@ -473,7 +474,7 @@ func readV4(reader *bufio.Reader, h *header, from timeseries.Time, pointsCount i
 	defer br.reclaimBuffers()
 	missing := map[uint64]*model.MetricValues{}
 	for _, hash := range hashes {
-		mv, exists := dest[hash]
+		mv, exists := dest.Load(hash)
 		if mv == nil {
 			mv = &model.MetricValues{
 				LabelsHash: hash,
@@ -486,7 +487,7 @@ func readV4(reader *bufio.Reader, h *header, from timeseries.Time, pointsCount i
 			return fmt.Errorf("failed to read data: %w", err)
 		}
 		if changed && !exists {
-			dest[hash] = mv
+			dest.Store(hash, mv)
 		}
 	}
 	if err = readLabelsV4(reader, hashes, missing); err != nil {
