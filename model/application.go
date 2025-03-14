@@ -3,12 +3,14 @@ package model
 import (
 	"fmt"
 	"strconv"
+	"sync"
 
 	"github.com/coroot/coroot/timeseries"
 	"github.com/coroot/coroot/utils"
 )
 
 type Application struct {
+	Mu sync.RWMutex
 	Id ApplicationId
 
 	Custom   bool

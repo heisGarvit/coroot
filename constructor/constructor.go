@@ -79,7 +79,13 @@ func (c *Constructor) LoadWorld(ctx context.Context, from, to timeseries.Time, s
 	}
 
 	pjs := promJobStatuses{}
-	var nodes utils.ConcurrentMap[model.NodeId, *model.Node]
+
+	shardingNodesFn := func(m model.NodeId) uint32 {
+		return utils.Fnv32(m.MachineID + m.SystemUUID)
+	}
+
+	nodes := utils.NewConcurrentMap[model.NodeId, *model.Node](shardingNodesFn, 32)
+
 	rdsInstancesById := map[string]*model.Instance{}
 	ecInstancesById := map[string]*model.Instance{}
 	servicesByClusterIP := map[string]*model.Service{}

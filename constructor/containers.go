@@ -89,7 +89,10 @@ func (c *Constructor) getInstanceAndContainer(w *model.World, node *model.Node, 
 		if customApp != "" {
 			appId.Name = customApp
 		}
-		instance = w.GetOrCreateApplication(appId, customApp != "").GetOrCreateInstance(id.name, node)
+		app := w.GetOrCreateApplication(appId, customApp != "")
+		app.Mu.Lock()
+		instance = app.GetOrCreateInstance(id.name, node)
+		app.Mu.Unlock()
 		instances.Store(id, instance)
 	}
 	return instance, instance.GetOrCreateContainer(containerId, containerName)
@@ -125,6 +128,7 @@ func (c *Constructor) loadContainers(w *model.World, metrics map[string][]*model
 		v, ok := containers.Load(m.NodeContainerId)
 		if !ok {
 			node, _ := nodes.Load(model.NewNodeIdFromLabels(m))
+			v = &containerCache{}
 			node.Mu.Lock()
 			v.instance, v.container = c.getInstanceAndContainer(w, node, &instances, m.ContainerId)
 			node.Mu.Unlock()
@@ -146,7 +150,7 @@ func (c *Constructor) loadContainers(w *model.World, metrics map[string][]*model
 		for _, m := range ms {
 			waitGroup.Add(1)
 			sem <- struct{}{} // acquire a slot
-			func(m *model.MetricValues) {
+			go func(m *model.MetricValues) {
 				loadContainerMetricsFn(m, f)
 				waitGroup.Done()
 				<-sem // release the slot
