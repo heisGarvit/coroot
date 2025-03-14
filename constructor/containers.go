@@ -148,16 +148,13 @@ func (c *Constructor) loadContainers(w *model.World, metrics map[string][]*model
 
 	loadContainer := func(queryName string, f func(instance *model.Instance, container *model.Container, metric *model.MetricValues)) {
 		waitGroup := sync.WaitGroup{}
-		sem := make(chan struct{}, 1000) // limit to 1000 goroutines
 
 		ms := metrics[queryName]
 		for _, m := range ms {
 			waitGroup.Add(1)
-			sem <- struct{}{} // acquire a slot
 			go func(m *model.MetricValues) {
 				loadContainerMetricsFn(m, f)
 				waitGroup.Done()
-				<-sem // release the slot
 			}(m)
 		}
 
@@ -292,6 +289,7 @@ func (c *Constructor) loadContainers(w *model.World, metrics map[string][]*model
 	loadL7RequestsCount("container_nats_messages", model.ProtocolNats)
 	loadL7RequestsCount("container_clickhouse_queries_count", model.ProtocolClickhouse)
 	loadL7RequestsCount("container_zookeeper_requests_count", model.ProtocolZookeeper)
+	klog.Infof("Loaded loadL7RequestsCount in %d ms", time.Since(t).Milliseconds())
 
 	loadL7RequestsLatency := func(queryName string, protocol model.Protocol) {
 		loadConnection(queryName, func(connection *model.Connection, metric *model.MetricValues) {
@@ -308,6 +306,7 @@ func (c *Constructor) loadContainers(w *model.World, metrics map[string][]*model
 	loadL7RequestsLatency("container_cassandra_queries_latency", model.ProtocolCassandra)
 	loadL7RequestsLatency("container_clickhouse_queries_latency", model.ProtocolClickhouse)
 	loadL7RequestsLatency("container_zookeeper_requests_latency", model.ProtocolZookeeper)
+	klog.Infof("Loaded loadL7RequestsLatency in %d ms", time.Since(t).Milliseconds())
 
 	loadL7RequestsHistogram := func(queryName string, protocol model.Protocol) {
 		loadConnection(queryName, func(connection *model.Connection, metric *model.MetricValues) {
@@ -332,6 +331,7 @@ func (c *Constructor) loadContainers(w *model.World, metrics map[string][]*model
 	loadL7RequestsHistogram("container_cassandra_queries_histogram", model.ProtocolCassandra)
 	loadL7RequestsHistogram("container_clickhouse_queries_histogram", model.ProtocolClickhouse)
 	loadL7RequestsHistogram("container_zookeeper_requests_histogram", model.ProtocolZookeeper)
+	klog.Infof("Loaded loadL7RequestsHistogram in %d ms", time.Since(t).Milliseconds())
 
 	loadContainer("container_dns_requests_total", func(instance *model.Instance, container *model.Container, metric *model.MetricValues) {
 		r := model.DNSRequest{
@@ -370,6 +370,7 @@ func (c *Constructor) loadContainers(w *model.World, metrics map[string][]*model
 	loadVolume("container_volume_used", func(volume *model.Volume, metric *model.MetricValues) {
 		volume.UsedBytes = merge(volume.UsedBytes, metric.Values, timeseries.Any)
 	})
+	klog.Infof("Loaded loadVolume in %d ms", time.Since(t).Milliseconds())
 
 	instancesByListen := map[model.Listen]*model.Instance{}
 	for _, app := range w.Applications {
@@ -386,6 +387,7 @@ func (c *Constructor) loadContainers(w *model.World, metrics map[string][]*model
 			}
 		}
 	}
+	klog.Infof("range w.Applications in %d ms", time.Since(t).Milliseconds())
 
 	for _, app := range w.Applications { // lookup remote instance by listen
 		for _, instance := range app.Instances {
@@ -421,6 +423,8 @@ func (c *Constructor) loadContainers(w *model.World, metrics map[string][]*model
 			}
 		}
 	}
+
+	klog.Infof("Loaded lookup remote instance by listen in %d ms", time.Since(t).Milliseconds())
 
 	for _, app := range w.Applications { // creating ApplicationKindExternalService for unknown remote instances
 		for _, instance := range app.Instances {
@@ -460,6 +464,8 @@ func (c *Constructor) loadContainers(w *model.World, metrics map[string][]*model
 		}
 	}
 
+	klog.Infof("Loaded creating ApplicationKindExternalService for unknown remote instances in %d ms", time.Since(t).Milliseconds())
+
 	for _, app := range w.Applications {
 		for _, instance := range app.Instances {
 			for _, u := range instance.Upstreams {
@@ -472,6 +478,8 @@ func (c *Constructor) loadContainers(w *model.World, metrics map[string][]*model
 			}
 		}
 	}
+
+	klog.Infof("Loaded for _, app := range w.Applications in %d ms", time.Since(t).Milliseconds())
 }
 
 func getOrCreateConnection(instance *model.Instance, container string, m *model.MetricValues) *model.Connection {
