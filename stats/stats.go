@@ -205,7 +205,7 @@ type Event struct {
 }
 
 func (c *Collector) Stats(r *http.Request, w http.ResponseWriter) {
-	utils.WriteJson(w, c.collect())
+	utils.WriteJson(w, c.collect(r.Context()))
 }
 
 func (c *Collector) RegisterRequest(r *http.Request) {
