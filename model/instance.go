@@ -107,7 +107,9 @@ func (instance *Instance) GetOrCreateContainer(id, name string) *Container {
 	c := instance.Containers[name]
 	if c == nil {
 		c = NewContainer(id, name)
+		instance.Mu.Lock()
 		instance.Containers[name] = c
+		instance.Mu.Unlock()
 	}
 	return c
 }
