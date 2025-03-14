@@ -5,6 +5,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/coroot/coroot/model"
@@ -19,7 +20,7 @@ type instanceId struct {
 	node model.NodeId
 }
 
-func (c *Constructor) getInstanceAndContainer(w *model.World, node *model.Node, instances map[instanceId]*model.Instance, containerId string) (*model.Instance, *model.Container) {
+func (c *Constructor) getInstanceAndContainer(w *model.World, node *model.Node, instances *utils.CMap[instanceId, *model.Instance], containerId string) (*model.Instance, *model.Container) {
 	var nodeId model.NodeId
 	var nodeName string
 	if node != nil {
@@ -37,8 +38,9 @@ func (c *Constructor) getInstanceAndContainer(w *model.World, node *model.Node, 
 		w.IntegrationStatus.KubeStateMetrics.Required = true
 		ns, pod := parts[2], parts[3]
 		containerName = parts[4]
-		instance = instances[instanceId{ns: ns, name: pod, node: nodeId}]
-		if instance == nil {
+		var ok bool
+		instance, ok = instances.Load(instanceId{ns: ns, name: pod, node: nodeId})
+		if !ok || instance == nil {
 			return nil, nil
 		}
 		return instance, instance.GetOrCreateContainer(containerId, containerName)
@@ -80,14 +82,15 @@ func (c *Constructor) getInstanceAndContainer(w *model.World, node *model.Node, 
 		id.ns = "_"
 	}
 	id.node = nodeId
-	instance = instances[id]
-	if instance == nil {
+	var ok bool
+	instance, ok = instances.Load(id)
+	if !ok || instance == nil {
 		customApp := c.project.GetCustomApplicationName(id.name)
 		if customApp != "" {
 			appId.Name = customApp
 		}
 		instance = w.GetOrCreateApplication(appId, customApp != "").GetOrCreateInstance(id.name, node)
-		instances[id] = instance
+		instances.Store(id, instance)
 	}
 	return instance, instance.GetOrCreateContainer(containerId, containerName)
 }
@@ -101,34 +104,53 @@ type containerCache map[model.NodeContainerId]struct {
 
 func (c *Constructor) loadContainers(w *model.World, metrics map[string][]*model.MetricValues, pjs promJobStatuses, nodes nodeCache, containers containerCache, servicesByClusterIP map[string]*model.Service, ip2fqdn map[string]*utils.StringSet) {
 	t := time.Now()
-	instances := map[instanceId]*model.Instance{}
+	var instances utils.CMap[instanceId, *model.Instance]
 	for _, a := range w.Applications {
 		for _, i := range a.Instances {
 			var nodeId model.NodeId
 			if i.Node != nil {
 				nodeId = i.Node.Id
 			}
-			instances[instanceId{ns: a.Id.Namespace, name: i.Name, node: nodeId}] = i
+			instances.Store(instanceId{ns: a.Id.Namespace, name: i.Name, node: nodeId}, i)
 		}
 	}
-	klog.Infof("Loaded %d instances in %d ms", len(instances), time.Since(t).Milliseconds())
+	klog.Infof("Loaded instances in %d ms", time.Since(t).Milliseconds())
 
 	rttByInstance := map[instanceId]map[string]*timeseries.TimeSeries{}
 
 	loadContainer := func(queryName string, f func(instance *model.Instance, container *model.Container, metric *model.MetricValues)) {
+		syncRWLock := sync.RWMutex{}
+		waitGroup := sync.WaitGroup{}
+
 		ms := metrics[queryName]
 		for _, m := range ms {
-			v, ok := containers[m.NodeContainerId]
-			if !ok {
-				nodeId := model.NewNodeIdFromLabels(m)
-				v.instance, v.container = c.getInstanceAndContainer(w, nodes[nodeId], instances, m.ContainerId)
-				containers[m.NodeContainerId] = v
-			}
-			if v.instance == nil || v.container == nil {
-				continue
-			}
-			f(v.instance, v.container, m)
+
+			waitGroup.Add(1)
+			go func(m *model.MetricValues) {
+				defer waitGroup.Done()
+
+				syncRWLock.RLock()
+				v, ok := containers[m.NodeContainerId]
+				syncRWLock.RUnlock()
+				if !ok {
+					nodeId := model.NewNodeIdFromLabels(m)
+					v.instance, v.container = c.getInstanceAndContainer(w, nodes[nodeId], &instances, m.ContainerId)
+					syncRWLock.Lock()
+					containers[m.NodeContainerId] = v
+					syncRWLock.Unlock()
+				}
+				if v.instance == nil || v.container == nil {
+					return
+				}
+				syncRWLock.Lock()
+				f(v.instance, v.container, m)
+				syncRWLock.Unlock()
+
+			}(m)
+
 		}
+
+		waitGroup.Wait()
 	}
 
 	loadContainer("container_info", func(instance *model.Instance, container *model.Container, metric *model.MetricValues) {
