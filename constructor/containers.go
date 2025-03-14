@@ -20,7 +20,7 @@ type instanceId struct {
 	node model.NodeId
 }
 
-func (c *Constructor) getInstanceAndContainer(w *model.World, node *model.Node, instances *utils.CMap[instanceId, *model.Instance], containerId string) (*model.Instance, *model.Container) {
+func (c *Constructor) getInstanceAndContainer(w *model.World, node *model.Node, instances *utils.ConcurrentMap[instanceId, *model.Instance], containerId string) (*model.Instance, *model.Container) {
 	var nodeId model.NodeId
 	var nodeName string
 	if node != nil {
@@ -104,7 +104,12 @@ type containerCache map[model.NodeContainerId]struct {
 
 func (c *Constructor) loadContainers(w *model.World, metrics map[string][]*model.MetricValues, pjs promJobStatuses, nodes nodeCache, containers containerCache, servicesByClusterIP map[string]*model.Service, ip2fqdn map[string]*utils.StringSet) {
 	t := time.Now()
-	var instances utils.CMap[instanceId, *model.Instance]
+
+	shardingFn := func(instance instanceId) uint32 {
+		return utils.Fnv32(instance.ns + instance.name + instance.node.MachineID + instance.node.SystemUUID)
+	}
+
+	instances := utils.NewConcurrentMap[instanceId, *model.Instance](shardingFn, 32)
 	for _, a := range w.Applications {
 		for _, i := range a.Instances {
 			var nodeId model.NodeId

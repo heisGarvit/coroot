@@ -4,77 +4,79 @@ import (
 	"sync"
 )
 
-type CMap[KeyType comparable, ValueType any] struct {
-	mu      sync.RWMutex
-	storage map[KeyType]ValueType
+type ConcurrentMap[KeyType comparable, ValueType any] struct {
+	shards     []*ConcurrentMapShared[KeyType, ValueType]
+	shardingFn func(key KeyType) uint32
+	shardCount int
 }
 
-func (e *CMap[KeyType, ValueType]) Store(key KeyType, value ValueType) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	if e.storage == nil {
-		e.storage = make(map[KeyType]ValueType)
+type ConcurrentMapShared[KeyType comparable, ValueType any] struct {
+	items map[KeyType]ValueType
+	sync.RWMutex
+}
+
+func NewConcurrentMap[K comparable, V any](sharding func(key K) uint32, shardCount int) ConcurrentMap[K, V] {
+	m := ConcurrentMap[K, V]{
+		shardingFn: sharding,
+		shards:     make([]*ConcurrentMapShared[K, V], shardCount),
+		shardCount: shardCount,
 	}
-	e.storage[key] = value
-}
-
-func (e *CMap[KeyType, ValueType]) Load(key KeyType) (value ValueType, ok bool) {
-	e.mu.RLock()
-	defer e.mu.RUnlock()
-	value, ok = e.storage[key]
-	return
-}
-
-func (e *CMap[KeyType, ValueType]) LoadOrStore(key KeyType, value ValueType) (actual ValueType, loaded bool) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	if e.storage == nil {
-		e.storage = make(map[KeyType]ValueType)
+	for i := 0; i < shardCount; i++ {
+		m.shards[i] = &ConcurrentMapShared[K, V]{items: make(map[K]V)}
 	}
-	actual, loaded = e.storage[key]
-	if !loaded {
-		e.storage[key] = value
-		actual = value
-	}
-	return
+	return m
 }
 
-func (e *CMap[KeyType, ValueType]) Delete(key KeyType) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	delete(e.storage, key)
+func (m ConcurrentMap[K, V]) GetShard(key K) *ConcurrentMapShared[K, V] {
+	return m.shards[uint(m.shardingFn(key))%uint(m.shardCount)]
 }
 
-func (e *CMap[KeyType, ValueType]) AllValues() []ValueType {
-	e.mu.RLock()
-	defer e.mu.RUnlock()
-
-	var values []ValueType
-	for _, value := range e.storage {
-		values = append(values, value)
-	}
-
-	return values
-
-}
-
-func (e *CMap[KeyType, ValueType]) Range(f func(key KeyType, value ValueType) bool) {
-	e.mu.RLock()
-	defer e.mu.RUnlock()
-	for k, v := range e.storage {
-		if !f(k, v) {
-			break
-		}
+// MStore stores the given data in the map.
+func (m ConcurrentMap[K, V]) MStore(data map[K]V) {
+	for key, value := range data {
+		shard := m.GetShard(key)
+		shard.Lock()
+		shard.items[key] = value
+		shard.Unlock()
 	}
 }
 
-func (e *CMap[KeyType, ValueType]) EntireMap() map[KeyType]ValueType {
-	e.mu.RLock()
-	defer e.mu.RUnlock()
+// Store the given value under the specified key.
+func (m ConcurrentMap[K, V]) Store(key K, value V) {
+	// Get map shard.
+	shard := m.GetShard(key)
+	shard.Lock()
+	shard.items[key] = value
+	shard.Unlock()
+}
 
-	mapCopy := make(map[KeyType]ValueType, len(e.storage))
-	for k, v := range e.storage {
-		mapCopy[k] = v
+// Load retrieves an element from map under given key.
+func (m ConcurrentMap[K, V]) Load(key K) (V, bool) {
+	// Get shard
+	shard := m.GetShard(key)
+	shard.RLock()
+	// Get item from shard.
+	val, ok := shard.items[key]
+	shard.RUnlock()
+	return val, ok
+}
+
+// Delete removes an element from the map.
+func (m ConcurrentMap[K, V]) Delete(key K) {
+	// Try to get shard.
+	shard := m.GetShard(key)
+	shard.Lock()
+	delete(shard.items, key)
+	shard.Unlock()
+}
+
+func Fnv32(key string) uint32 {
+	hash := uint32(2166136261)
+	const prime32 = uint32(16777619)
+	keyLength := len(key)
+	for i := 0; i < keyLength; i++ {
+		hash *= prime32
+		hash ^= uint32(key[i])
 	}
-	return mapCopy
+	return hash
 }
