@@ -148,7 +148,7 @@ func (c *Constructor) loadContainers(w *model.World, metrics map[string][]*model
 
 	loadContainer := func(queryName string, f func(instance *model.Instance, container *model.Container, metric *model.MetricValues)) {
 		waitGroup := sync.WaitGroup{}
-		sem := make(chan struct{}, 2) // limit to 1000 goroutines
+		sem := make(chan struct{}, 1000) // limit to 1000 goroutines
 
 		ms := metrics[queryName]
 		for _, m := range ms {
@@ -220,7 +220,6 @@ func (c *Constructor) loadContainers(w *model.World, metrics map[string][]*model
 		rttByInstance[id] = rtts
 		rttByInstanceMu.Unlock()
 	})
-	klog.Infof("Loaded container_net_latency in %d ms", time.Since(t).Milliseconds())
 	loadContainer("container_net_tcp_listen_info", func(instance *model.Instance, container *model.Container, metric *model.MetricValues) {
 		ip, port, err := net.SplitHostPort(metric.Labels["listen_addr"])
 		if err != nil {
@@ -229,9 +228,11 @@ func (c *Constructor) loadContainers(w *model.World, metrics map[string][]*model
 		}
 		isActive := metric.Values.Last() == 1
 		l := model.Listen{IP: ip, Port: port, Proxied: metric.Labels["proxy"] != ""}
+		instance.Mu.Lock()
 		if !instance.TcpListens[l] {
 			instance.TcpListens[l] = isActive
 		}
+		instance.Mu.Unlock()
 	})
 
 	loadConnection := func(queryName string, f func(connection *model.Connection, metric *model.MetricValues)) {
@@ -263,6 +264,8 @@ func (c *Constructor) loadContainers(w *model.World, metrics map[string][]*model
 	loadConnection("container_net_tcp_retransmits", func(connection *model.Connection, metric *model.MetricValues) {
 		connection.Retransmissions = merge(connection.Retransmissions, metric.Values, timeseries.Any)
 	})
+
+	klog.Infof("Loaded container_net_tcp_retransmits in %d ms", time.Since(t).Milliseconds())
 
 	loadL7RequestsCount := func(queryName string, protocol model.Protocol) {
 		loadConnection(queryName, func(connection *model.Connection, metric *model.MetricValues) {
