@@ -2,6 +2,7 @@ package cache
 
 import (
 	"fmt"
+	"github.com/coroot/coroot/utils"
 	"os"
 	"sort"
 	"strconv"
@@ -116,7 +117,11 @@ func (c *Cache) compact(t CompactionTask) error {
 		return fmt.Errorf("no src chunks")
 	}
 	start := time.Now()
-	metrics := map[uint64]*model.MetricValues{}
+	shardingFn := func(_ uint64) uint32 {
+		return 1
+	}
+	metrics := utils.NewConcurrentMap[uint64, *model.MetricValues](shardingFn, 2)
+
 	sort.Slice(t.src, func(i, j int) bool {
 		return t.src[i].From < t.src[j].From
 	})
@@ -133,8 +138,8 @@ func (c *Cache) compact(t CompactionTask) error {
 		}
 	}
 
-	dst := make([]*model.MetricValues, 0, len(metrics))
-	for _, m := range metrics {
+	dst := make([]*model.MetricValues, 0, metrics.Count())
+	for _, m := range metrics.Values() {
 		dst = append(dst, m)
 	}
 	if err := c.writeChunk(t.projectID, t.queryHash, t.dstChunk, pointsCount, step, true, dst); err != nil {

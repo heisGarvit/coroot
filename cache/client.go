@@ -46,7 +46,6 @@ func (c *Client) QueryRange(ctx context.Context, query string, from, to timeseri
 	shardingFn := func(_ uint64) uint32 {
 		return 1
 	}
-
 	res := utils.NewConcurrentMap[uint64, *model.MetricValues](shardingFn, 2)
 	resPoints := int(to.Sub(from)/step + 1)
 
