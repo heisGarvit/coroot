@@ -123,12 +123,16 @@ func (c *Constructor) loadContainers(w *model.World, metrics map[string][]*model
 	}
 
 	rttByInstance := map[instanceId]map[string]*timeseries.TimeSeries{}
+	rttByInstanceMu := sync.RWMutex{}
 
 	loadContainerMetricsFn := func(m *model.MetricValues, f func(instance *model.Instance, container *model.Container, metric *model.MetricValues)) {
 		v, ok := containers.Load(m.NodeContainerId)
 		if !ok {
 			node, _ := nodes.Load(model.NewNodeIdFromLabels(m))
 			v = &containerCache{}
+			if node == nil {
+				node = &model.Node{}
+			}
 			node.Mu.Lock()
 			v.instance, v.container = c.getInstanceAndContainer(w, node, &instances, m.ContainerId)
 			node.Mu.Unlock()
@@ -144,7 +148,7 @@ func (c *Constructor) loadContainers(w *model.World, metrics map[string][]*model
 
 	loadContainer := func(queryName string, f func(instance *model.Instance, container *model.Container, metric *model.MetricValues)) {
 		waitGroup := sync.WaitGroup{}
-		sem := make(chan struct{}, 1000) // limit to 1000 goroutines
+		sem := make(chan struct{}, 2) // limit to 1000 goroutines
 
 		ms := metrics[queryName]
 		for _, m := range ms {
@@ -205,12 +209,16 @@ func (c *Constructor) loadContainers(w *model.World, metrics map[string][]*model
 	})
 	loadContainer("container_net_latency", func(instance *model.Instance, container *model.Container, metric *model.MetricValues) {
 		id := instanceId{ns: instance.Owner.Id.Namespace, name: instance.Name, node: instance.NodeId()}
+		rttByInstanceMu.RLock()
 		rtts := rttByInstance[id]
+		rttByInstanceMu.RUnlock()
 		if rtts == nil {
 			rtts = map[string]*timeseries.TimeSeries{}
 		}
 		rtts[metric.Destination] = merge(rtts[metric.Destination], metric.Values, timeseries.Any)
+		rttByInstanceMu.Lock()
 		rttByInstance[id] = rtts
+		rttByInstanceMu.Unlock()
 	})
 	klog.Infof("Loaded container_net_latency in %d ms", time.Since(t).Milliseconds())
 	loadContainer("container_net_tcp_listen_info", func(instance *model.Instance, container *model.Container, metric *model.MetricValues) {
@@ -468,7 +476,9 @@ func getOrCreateConnection(instance *model.Instance, container string, m *model.
 		return nil
 	}
 
+	instance.Mu.RLock()
 	connection := instance.Upstreams[m.ConnectionKey]
+	instance.Mu.RUnlock()
 	if connection == nil {
 		var actualIP, actualPort, serviceIP, servicePort string
 		var err error
@@ -496,7 +506,9 @@ func getOrCreateConnection(instance *model.Instance, container string, m *model.
 			RequestsLatency:   map[model.Protocol]*timeseries.TimeSeries{},
 			RequestsHistogram: map[model.Protocol]map[float32]*timeseries.TimeSeries{},
 		}
+		instance.Mu.Lock()
 		instance.Upstreams[m.ConnectionKey] = connection
+		instance.Mu.Unlock()
 	}
 	return connection
 }

@@ -3,6 +3,7 @@ package model
 import (
 	"github.com/coroot/coroot/timeseries"
 	"golang.org/x/exp/maps"
+	"sync"
 )
 
 type IntegrationStatus struct {
@@ -16,6 +17,7 @@ type IntegrationStatus struct {
 }
 
 type World struct {
+	Mu  sync.RWMutex
 	Ctx timeseries.Context
 
 	CustomApplications map[string]CustomApplication
@@ -60,11 +62,15 @@ func (w *World) GetApplicationByNsAndName(ns, name string) *Application {
 }
 
 func (w *World) GetOrCreateApplication(id ApplicationId, custom bool) *Application {
+	w.Mu.RLock()
 	app := w.GetApplication(id)
+	w.Mu.RUnlock()
 	if app == nil {
 		app = NewApplication(id)
 		app.Custom = custom
+		w.Mu.Lock()
 		w.Applications[id] = app
+		w.Mu.Unlock()
 	}
 	return app
 }

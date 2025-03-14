@@ -2,6 +2,7 @@ package model
 
 import (
 	"github.com/coroot/coroot/timeseries"
+	"sync"
 )
 
 type ClusterRole int
@@ -43,6 +44,7 @@ type Instance struct {
 	Volumes []*Volume
 
 	Upstreams map[ConnectionKey]*Connection
+	Mu        sync.RWMutex
 
 	TcpListens map[Listen]bool
 
