@@ -1,17 +1,18 @@
 package constructor
 
 import (
+	"github.com/coroot/coroot/utils"
 	"strings"
 
 	"github.com/coroot/coroot/model"
 	"github.com/coroot/coroot/timeseries"
 )
 
-func (c *Constructor) loadJVM(metrics map[string][]*model.MetricValues, containers containerCache) {
+func (c *Constructor) loadJVM(metrics map[string][]*model.MetricValues, containers *utils.ConcurrentMap[model.NodeContainerId, containerCache]) {
 	load := func(queryName string, f func(jvm *model.Jvm, metric *model.MetricValues)) {
 		for _, metric := range metrics[queryName] {
-			v := containers[metric.NodeContainerId]
-			if v.instance == nil {
+			v, ok := containers.Load(metric.NodeContainerId)
+			if !ok || v.instance == nil {
 				continue
 			}
 			name := metric.Labels["jvm"]

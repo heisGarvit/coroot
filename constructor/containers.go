@@ -5,6 +5,8 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/coroot/coroot/model"
 	"github.com/coroot/coroot/timeseries"
@@ -18,7 +20,7 @@ type instanceId struct {
 	node model.NodeId
 }
 
-func (c *Constructor) getInstanceAndContainer(w *model.World, node *model.Node, instances map[instanceId]*model.Instance, containerId string) (*model.Instance, *model.Container) {
+func (c *Constructor) getInstanceAndContainer(w *model.World, node *model.Node, instances *utils.ConcurrentMap[instanceId, *model.Instance], containerId string) (*model.Instance, *model.Container) {
 	var nodeId model.NodeId
 	var nodeName string
 	if node != nil {
@@ -36,8 +38,9 @@ func (c *Constructor) getInstanceAndContainer(w *model.World, node *model.Node, 
 		w.IntegrationStatus.KubeStateMetrics.Required = true
 		ns, pod := parts[2], parts[3]
 		containerName = parts[4]
-		instance = instances[instanceId{ns: ns, name: pod, node: nodeId}]
-		if instance == nil {
+		var ok bool
+		instance, ok = instances.Load(instanceId{ns: ns, name: pod, node: nodeId})
+		if !ok || instance == nil {
 			return nil, nil
 		}
 		return instance, instance.GetOrCreateContainer(containerId, containerName)
@@ -79,53 +82,75 @@ func (c *Constructor) getInstanceAndContainer(w *model.World, node *model.Node, 
 		id.ns = "_"
 	}
 	id.node = nodeId
-	instance = instances[id]
-	if instance == nil {
+	var ok bool
+	instance, ok = instances.Load(id)
+	if !ok || instance == nil {
 		customApp := c.project.GetCustomApplicationName(id.name)
 		if customApp != "" {
 			appId.Name = customApp
 		}
 		instance = w.GetOrCreateApplication(appId, customApp != "").GetOrCreateInstance(id.name, node)
-		instances[id] = instance
+		instances.Store(id, instance)
 	}
 	return instance, instance.GetOrCreateContainer(containerId, containerName)
 }
 
 type nodeCache map[model.NodeId]*model.Node
 
-type containerCache map[model.NodeContainerId]struct {
+type containerCache struct {
 	instance  *model.Instance
 	container *model.Container
 }
 
-func (c *Constructor) loadContainers(w *model.World, metrics map[string][]*model.MetricValues, pjs promJobStatuses, nodes nodeCache, containers containerCache, servicesByClusterIP map[string]*model.Service, ip2fqdn map[string]*utils.StringSet) {
-	instances := map[instanceId]*model.Instance{}
+func (c *Constructor) loadContainers(w *model.World, metrics map[string][]*model.MetricValues, pjs promJobStatuses, nodes nodeCache, containers *utils.ConcurrentMap[model.NodeContainerId, containerCache], servicesByClusterIP map[string]*model.Service, ip2fqdn map[string]*utils.StringSet) {
+	t := time.Now()
+
+	shardingFn := func(instance instanceId) uint32 {
+		return utils.Fnv32(instance.name + instance.node.SystemUUID)
+	}
+
+	instances := utils.NewConcurrentMap[instanceId, *model.Instance](shardingFn, 32)
 	for _, a := range w.Applications {
 		for _, i := range a.Instances {
 			var nodeId model.NodeId
 			if i.Node != nil {
 				nodeId = i.Node.Id
 			}
-			instances[instanceId{ns: a.Id.Namespace, name: i.Name, node: nodeId}] = i
+			instances.Store(instanceId{ns: a.Id.Namespace, name: i.Name, node: nodeId}, i)
 		}
 	}
 
 	rttByInstance := map[instanceId]map[string]*timeseries.TimeSeries{}
 
+	loadContainerMetricsFn := func(m *model.MetricValues, f func(instance *model.Instance, container *model.Container, metric *model.MetricValues)) {
+		v, ok := containers.Load(m.NodeContainerId)
+		if !ok {
+			nodeId := model.NewNodeIdFromLabels(m)
+			v.instance, v.container = c.getInstanceAndContainer(w, nodes[nodeId], &instances, m.ContainerId)
+			containers.Store(m.NodeContainerId, v)
+		}
+		if v.instance == nil || v.container == nil {
+			return
+		}
+		f(v.instance, v.container, m)
+	}
+
 	loadContainer := func(queryName string, f func(instance *model.Instance, container *model.Container, metric *model.MetricValues)) {
+		waitGroup := sync.WaitGroup{}
+		sem := make(chan struct{}, 1000) // limit to 1000 goroutines
+
 		ms := metrics[queryName]
 		for _, m := range ms {
-			v, ok := containers[m.NodeContainerId]
-			if !ok {
-				nodeId := model.NewNodeIdFromLabels(m)
-				v.instance, v.container = c.getInstanceAndContainer(w, nodes[nodeId], instances, m.ContainerId)
-				containers[m.NodeContainerId] = v
-			}
-			if v.instance == nil || v.container == nil {
-				continue
-			}
-			f(v.instance, v.container, m)
+			waitGroup.Add(1)
+			sem <- struct{}{} // acquire a slot
+			go func(m *model.MetricValues) {
+				loadContainerMetricsFn(m, f)
+				waitGroup.Done()
+				<-sem // release the slot
+			}(m)
 		}
+
+		waitGroup.Wait()
 	}
 
 	loadContainer("container_info", func(instance *model.Instance, container *model.Container, metric *model.MetricValues) {
@@ -167,6 +192,7 @@ func (c *Constructor) loadContainers(w *model.World, metrics map[string][]*model
 	loadContainer("container_oom_kills_total", func(instance *model.Instance, container *model.Container, metric *model.MetricValues) {
 		container.OOMKills = merge(container.OOMKills, timeseries.Increase(metric.Values, pjs.get(metric.Labels)), timeseries.Any)
 	})
+	klog.Infof("Loaded container_oom_kills_total in %d ms", time.Since(t).Milliseconds())
 	loadContainer("container_restarts", func(instance *model.Instance, container *model.Container, metric *model.MetricValues) {
 		container.Restarts = merge(container.Restarts, timeseries.Increase(metric.Values, pjs.get(metric.Labels)), timeseries.Any)
 	})
@@ -179,6 +205,7 @@ func (c *Constructor) loadContainers(w *model.World, metrics map[string][]*model
 		rtts[metric.Destination] = merge(rtts[metric.Destination], metric.Values, timeseries.Any)
 		rttByInstance[id] = rtts
 	})
+	klog.Infof("Loaded container_net_latency in %d ms", time.Since(t).Milliseconds())
 	loadContainer("container_net_tcp_listen_info", func(instance *model.Instance, container *model.Container, metric *model.MetricValues) {
 		ip, port, err := net.SplitHostPort(metric.Labels["listen_addr"])
 		if err != nil {
