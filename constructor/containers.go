@@ -98,6 +98,7 @@ func (c *Constructor) getInstanceAndContainer(w *model.World, node *model.Node, 
 type nodeCache map[model.NodeId]*model.Node
 
 type containerCache struct {
+	mu        sync.Mutex
 	instance  *model.Instance
 	container *model.Container
 }
@@ -132,7 +133,9 @@ func (c *Constructor) loadContainers(w *model.World, metrics map[string][]*model
 		if v.instance == nil || v.container == nil {
 			return
 		}
+		v.mu.Lock()
 		f(v.instance, v.container, m)
+		v.mu.Unlock()
 	}
 
 	loadContainer := func(queryName string, f func(instance *model.Instance, container *model.Container, metric *model.MetricValues)) {
