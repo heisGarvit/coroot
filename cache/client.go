@@ -61,11 +61,13 @@ func (c *Client) QueryRange(ctx context.Context, query string, from, to timeseri
 			continue
 		}
 		wg.Add(1)
-		err := chunk.Read(ch.Path, from, resPoints, step, res, fillFunc)
-		wg.Done()
-		if err != nil {
-			return nil, err
-		}
+		go func() {
+			err := chunk.Read(ch.Path, from, resPoints, step, res, fillFunc)
+			if err != nil {
+				klog.Errorf("failed to read chunk %s: %s", ch.Path, err)
+			}
+			wg.Done()
+		}()
 	}
 	wg.Wait()
 

@@ -212,8 +212,8 @@ func (c *Constructor) loadContainers(w *model.World, metrics map[string][]*model
 		if rtts == nil {
 			rtts = map[string]*timeseries.TimeSeries{}
 		}
-		rtts[metric.Destination] = merge(rtts[metric.Destination], metric.Values, timeseries.Any)
 		rttByInstanceMu.Lock()
+		rtts[metric.Destination] = merge(rtts[metric.Destination], metric.Values, timeseries.Any)
 		rttByInstance[id] = rtts
 		rttByInstanceMu.Unlock()
 	})
