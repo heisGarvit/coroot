@@ -70,6 +70,18 @@ func (m ConcurrentMap[K, V]) Delete(key K) {
 	shard.Unlock()
 }
 
+// Count returns the number of elements within the map.
+func (m ConcurrentMap[K, V]) Count() int {
+	count := 0
+	for i := 0; i < m.shardCount; i++ {
+		shard := m.shards[i]
+		shard.RLock()
+		count += len(shard.items)
+		shard.RUnlock()
+	}
+	return count
+}
+
 func Fnv32(key string) uint32 {
 	hash := uint32(2166136261)
 	const prime32 = uint32(16777619)

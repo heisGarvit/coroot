@@ -57,10 +57,10 @@ func logMessage(instance *model.Instance, metric *model.MetricValues, pjs promJo
 	}
 }
 
-func (c *Constructor) loadContainerLogs(metrics map[string][]*model.MetricValues, containers containerCache, pjs promJobStatuses) {
+func (c *Constructor) loadContainerLogs(metrics map[string][]*model.MetricValues, containers *utils.ConcurrentMap[model.NodeContainerId, *containerCache], pjs promJobStatuses) {
 	for _, metric := range metrics["container_log_messages"] {
-		v := containers[metric.NodeContainerId]
-		if v.instance == nil {
+		v, ok := containers.Load(metric.NodeContainerId)
+		if !ok || v.instance == nil {
 			continue
 		}
 		logMessage(v.instance, metric, pjs)

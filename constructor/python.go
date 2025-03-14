@@ -3,13 +3,14 @@ package constructor
 import (
 	"github.com/coroot/coroot/model"
 	"github.com/coroot/coroot/timeseries"
+	"github.com/coroot/coroot/utils"
 )
 
-func (c *Constructor) loadPython(metrics map[string][]*model.MetricValues, containers containerCache) {
+func (c *Constructor) loadPython(metrics map[string][]*model.MetricValues, containers *utils.ConcurrentMap[model.NodeContainerId, *containerCache]) {
 	load := func(queryName string, f func(python *model.Python, metric *model.MetricValues)) {
 		for _, metric := range metrics[queryName] {
-			v := containers[metric.NodeContainerId]
-			if v.instance == nil {
+			v, ok := containers.Load(metric.NodeContainerId)
+			if !ok || v.instance == nil {
 				continue
 			}
 			if v.instance.Python == nil {

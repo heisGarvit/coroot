@@ -97,16 +97,16 @@ func (c *Constructor) getInstanceAndContainer(w *model.World, node *model.Node, 
 
 type nodeCache map[model.NodeId]*model.Node
 
-type containerCache map[model.NodeContainerId]struct {
+type containerCache struct {
 	instance  *model.Instance
 	container *model.Container
 }
 
-func (c *Constructor) loadContainers(w *model.World, metrics map[string][]*model.MetricValues, pjs promJobStatuses, nodes nodeCache, containers containerCache, servicesByClusterIP map[string]*model.Service, ip2fqdn map[string]*utils.StringSet) {
+func (c *Constructor) loadContainers(w *model.World, metrics map[string][]*model.MetricValues, pjs promJobStatuses, nodes nodeCache, containers *utils.ConcurrentMap[model.NodeContainerId, *containerCache], servicesByClusterIP map[string]*model.Service, ip2fqdn map[string]*utils.StringSet) {
 	t := time.Now()
 
 	shardingFn := func(instance instanceId) uint32 {
-		return utils.Fnv32(instance.ns + instance.name + instance.node.MachineID + instance.node.SystemUUID)
+		return utils.Fnv32(instance.name + instance.node.SystemUUID)
 	}
 
 	instances := utils.NewConcurrentMap[instanceId, *model.Instance](shardingFn, 32)
@@ -133,16 +133,10 @@ func (c *Constructor) loadContainers(w *model.World, metrics map[string][]*model
 			waitGroup.Add(1)
 			go func(m *model.MetricValues) {
 				defer waitGroup.Done()
-
-				syncRWLock.RLock()
-				v, ok := containers[m.NodeContainerId]
-				syncRWLock.RUnlock()
+				v, ok := containers.Load(m.NodeContainerId)
 				if !ok {
 					nodeId := model.NewNodeIdFromLabels(m)
 					v.instance, v.container = c.getInstanceAndContainer(w, nodes[nodeId], &instances, m.ContainerId)
-					syncRWLock.Lock()
-					containers[m.NodeContainerId] = v
-					syncRWLock.Unlock()
 				}
 				if v.instance == nil || v.container == nil {
 					return

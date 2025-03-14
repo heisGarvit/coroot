@@ -85,7 +85,11 @@ func (c *Constructor) LoadWorld(ctx context.Context, from, to timeseries.Time, s
 	ecInstancesById := map[string]*model.Instance{}
 	servicesByClusterIP := map[string]*model.Service{}
 	ip2fqdn := map[string]*utils.StringSet{}
-	containers := containerCache{}
+
+	shardingFn := func(m model.NodeContainerId) uint32 {
+		return utils.Fnv32(m.ContainerId)
+	}
+	containers := utils.NewConcurrentMap[model.NodeContainerId, *containerCache](shardingFn, 32)
 
 	// order is important
 	prof.stage("load_job_statuses", func() { loadPromJobStatuses(metrics, pjs) })
@@ -99,22 +103,22 @@ func (c *Constructor) LoadWorld(ctx context.Context, from, to timeseries.Time, s
 	prof.stage("load_rds", func() { c.loadRds(w, metrics, pjs, rdsInstancesById) })
 	prof.stage("load_elasticache", func() { c.loadElasticache(w, metrics, pjs, ecInstancesById) })
 	prof.stage("load_fargate_containers", func() { loadFargateContainers(w, metrics, pjs) })
-	prof.stage("load_containers", func() { c.loadContainers(w, metrics, pjs, nodes, containers, servicesByClusterIP, ip2fqdn) })
-	prof.stage("load_jvm", func() { c.loadJVM(metrics, containers) })
-	prof.stage("load_dotnet", func() { c.loadDotNet(metrics, containers) })
-	prof.stage("load_python", func() { c.loadPython(metrics, containers) })
+	prof.stage("load_containers", func() { c.loadContainers(w, metrics, pjs, nodes, &containers, servicesByClusterIP, ip2fqdn) })
+	prof.stage("load_jvm", func() { c.loadJVM(metrics, &containers) })
+	prof.stage("load_dotnet", func() { c.loadDotNet(metrics, &containers) })
+	prof.stage("load_python", func() { c.loadPython(metrics, &containers) })
 	prof.stage("enrich_instances", func() { enrichInstances(w, metrics, rdsInstancesById, ecInstancesById) })
 	prof.stage("join_db_cluster", func() { joinDBClusterComponents(w) })
 	prof.stage("calc_app_categories", func() { c.calcApplicationCategories(w) })
 	prof.stage("load_app_settings", func() { c.loadApplicationSettings(w) })
 	prof.stage("load_app_sli", func() { c.loadSLIs(w, metrics) })
-	prof.stage("load_container_logs", func() { c.loadContainerLogs(metrics, containers, pjs) })
+	prof.stage("load_container_logs", func() { c.loadContainerLogs(metrics, &containers, pjs) })
 	prof.stage("load_app_logs", func() { c.loadApplicationLogs(w, metrics) })
 	prof.stage("load_app_deployments", func() { c.loadApplicationDeployments(w) })
 	prof.stage("load_app_incidents", func() { c.loadApplicationIncidents(w) })
 	prof.stage("calc_app_events", func() { calcAppEvents(w) })
 
-	klog.Infof("LoadWorld --> %s: got %d containers, %d nodes, %d apps in %s", c.project.Id, len(containers), len(w.Nodes), len(w.Applications), time.Since(start).Truncate(time.Millisecond))
+	klog.Infof("LoadWorld --> %s: got %d containers, %d nodes, %d apps in %s", c.project.Id, containers.Count(), len(w.Nodes), len(w.Applications), time.Since(start).Truncate(time.Millisecond))
 	return w, nil
 }
 
