@@ -5,6 +5,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/coroot/coroot/model"
 	"github.com/coroot/coroot/timeseries"
@@ -99,6 +100,7 @@ type containerCache map[model.NodeContainerId]struct {
 }
 
 func (c *Constructor) loadContainers(w *model.World, metrics map[string][]*model.MetricValues, pjs promJobStatuses, nodes nodeCache, containers containerCache, servicesByClusterIP map[string]*model.Service, ip2fqdn map[string]*utils.StringSet) {
+	t := time.Now()
 	instances := map[instanceId]*model.Instance{}
 	for _, a := range w.Applications {
 		for _, i := range a.Instances {
@@ -109,6 +111,7 @@ func (c *Constructor) loadContainers(w *model.World, metrics map[string][]*model
 			instances[instanceId{ns: a.Id.Namespace, name: i.Name, node: nodeId}] = i
 		}
 	}
+	klog.Infof("Loaded %d instances in %d ms", len(instances), time.Since(t).Milliseconds())
 
 	rttByInstance := map[instanceId]map[string]*timeseries.TimeSeries{}
 
@@ -136,40 +139,56 @@ func (c *Constructor) loadContainers(w *model.World, metrics map[string][]*model
 			container.PeriodicSystemdJob = true
 		}
 	})
+
+	klog.Infof("Loaded container_info in %d ms", time.Since(t).Milliseconds())
+
 	loadContainer("container_application_type", func(instance *model.Instance, container *model.Container, metric *model.MetricValues) {
 		container.ApplicationTypes[model.ApplicationType(metric.Labels["application_type"])] = true
 	})
 
+	klog.Infof("Loaded container_application_type in %d ms", time.Since(t).Milliseconds())
+
 	loadContainer("container_cpu_limit", func(instance *model.Instance, container *model.Container, metric *model.MetricValues) {
 		container.CpuLimit = merge(container.CpuLimit, metric.Values, timeseries.Any)
 	})
+	klog.Infof("Loaded container_cpu_limit in %d ms", time.Since(t).Milliseconds())
+
 	loadContainer("container_cpu_usage", func(instance *model.Instance, container *model.Container, metric *model.MetricValues) {
 		container.CpuUsage = merge(container.CpuUsage, metric.Values, timeseries.Any)
 	})
+	klog.Infof("Loaded container_cpu_usage in %d ms", time.Since(t).Milliseconds())
 	loadContainer("container_cpu_delay", func(instance *model.Instance, container *model.Container, metric *model.MetricValues) {
 		container.CpuDelay = merge(container.CpuDelay, metric.Values, timeseries.Any)
 	})
+	klog.Infof("Loaded container_cpu_delay in %d ms", time.Since(t).Milliseconds())
 	loadContainer("container_throttled_time", func(instance *model.Instance, container *model.Container, metric *model.MetricValues) {
 		container.ThrottledTime = merge(container.ThrottledTime, metric.Values, timeseries.Any)
 	})
+	klog.Infof("Loaded container_throttled_time in %d ms", time.Since(t).Milliseconds())
 	loadContainer("container_memory_rss", func(instance *model.Instance, container *model.Container, metric *model.MetricValues) {
 		container.MemoryRss = merge(container.MemoryRss, metric.Values, timeseries.Any)
 	})
+	klog.Infof("Loaded container_memory_rss in %d ms", time.Since(t).Milliseconds())
 	loadContainer("container_memory_rss_for_trend", func(instance *model.Instance, container *model.Container, metric *model.MetricValues) {
 		container.MemoryRssForTrend = merge(container.MemoryRssForTrend, metric.Values, timeseries.Any)
 	})
+	klog.Infof("Loaded container_memory_rss_for_trend in %d ms", time.Since(t).Milliseconds())
 	loadContainer("container_memory_cache", func(instance *model.Instance, container *model.Container, metric *model.MetricValues) {
 		container.MemoryCache = merge(container.MemoryCache, metric.Values, timeseries.Any)
 	})
+	klog.Infof("Loaded container_memory_cache in %d ms", time.Since(t).Milliseconds())
 	loadContainer("container_memory_limit", func(instance *model.Instance, container *model.Container, metric *model.MetricValues) {
 		container.MemoryLimit = merge(container.MemoryLimit, metric.Values, timeseries.Any)
 	})
+	klog.Infof("Loaded container_memory_limit in %d ms", time.Since(t).Milliseconds())
 	loadContainer("container_oom_kills_total", func(instance *model.Instance, container *model.Container, metric *model.MetricValues) {
 		container.OOMKills = merge(container.OOMKills, timeseries.Increase(metric.Values, pjs.get(metric.Labels)), timeseries.Any)
 	})
+	klog.Infof("Loaded container_oom_kills_total in %d ms", time.Since(t).Milliseconds())
 	loadContainer("container_restarts", func(instance *model.Instance, container *model.Container, metric *model.MetricValues) {
 		container.Restarts = merge(container.Restarts, timeseries.Increase(metric.Values, pjs.get(metric.Labels)), timeseries.Any)
 	})
+	klog.Infof("Loaded container_restarts in %d ms", time.Since(t).Milliseconds())
 	loadContainer("container_net_latency", func(instance *model.Instance, container *model.Container, metric *model.MetricValues) {
 		id := instanceId{ns: instance.Owner.Id.Namespace, name: instance.Name, node: instance.NodeId()}
 		rtts := rttByInstance[id]
@@ -179,6 +198,7 @@ func (c *Constructor) loadContainers(w *model.World, metrics map[string][]*model
 		rtts[metric.Destination] = merge(rtts[metric.Destination], metric.Values, timeseries.Any)
 		rttByInstance[id] = rtts
 	})
+	klog.Infof("Loaded container_net_latency in %d ms", time.Since(t).Milliseconds())
 	loadContainer("container_net_tcp_listen_info", func(instance *model.Instance, container *model.Container, metric *model.MetricValues) {
 		ip, port, err := net.SplitHostPort(metric.Labels["listen_addr"])
 		if err != nil {
@@ -191,6 +211,7 @@ func (c *Constructor) loadContainers(w *model.World, metrics map[string][]*model
 			instance.TcpListens[l] = isActive
 		}
 	})
+	klog.Infof("Loaded container_net_tcp_listen_info in %d ms", time.Since(t).Milliseconds())
 
 	loadConnection := func(queryName string, f func(connection *model.Connection, metric *model.MetricValues)) {
 		loadContainer(queryName, func(instance *model.Instance, container *model.Container, metric *model.MetricValues) {
@@ -200,27 +221,35 @@ func (c *Constructor) loadContainers(w *model.World, metrics map[string][]*model
 			}
 		})
 	}
+
 	loadConnection("container_net_tcp_successful_connects", func(connection *model.Connection, metric *model.MetricValues) {
 		connection.SuccessfulConnections = merge(connection.SuccessfulConnections, metric.Values, timeseries.Any)
 	})
+	klog.Infof("Loaded container_net_tcp_successful_connects in %d ms", time.Since(t).Milliseconds())
 	loadConnection("container_net_tcp_connection_time_seconds", func(connection *model.Connection, metric *model.MetricValues) {
 		connection.ConnectionTime = merge(connection.ConnectionTime, metric.Values, timeseries.Any)
 	})
+	klog.Infof("Loaded container_net_tcp_connection_time_seconds in %d ms", time.Since(t).Milliseconds())
 	loadConnection("container_net_tcp_bytes_sent", func(connection *model.Connection, metric *model.MetricValues) {
 		connection.BytesSent = merge(connection.BytesSent, metric.Values, timeseries.Any)
 	})
+	klog.Infof("Loaded container_net_tcp_bytes_sent in %d ms", time.Since(t).Milliseconds())
 	loadConnection("container_net_tcp_bytes_received", func(connection *model.Connection, metric *model.MetricValues) {
 		connection.BytesReceived = merge(connection.BytesReceived, metric.Values, timeseries.Any)
 	})
+	klog.Infof("Loaded container_net_tcp_bytes_received in %d ms", time.Since(t).Milliseconds())
 	loadConnection("container_net_tcp_failed_connects", func(connection *model.Connection, metric *model.MetricValues) {
 		connection.FailedConnections = merge(connection.FailedConnections, metric.Values, timeseries.Any)
 	})
+	klog.Infof("Loaded container_net_tcp_failed_connects in %d ms", time.Since(t).Milliseconds())
 	loadConnection("container_net_tcp_active_connections", func(connection *model.Connection, metric *model.MetricValues) {
 		connection.Active = merge(connection.Active, metric.Values, timeseries.Any)
 	})
+	klog.Infof("Loaded container_net_tcp_active_connections in %d ms", time.Since(t).Milliseconds())
 	loadConnection("container_net_tcp_retransmits", func(connection *model.Connection, metric *model.MetricValues) {
 		connection.Retransmissions = merge(connection.Retransmissions, metric.Values, timeseries.Any)
 	})
+	klog.Infof("Loaded container_net_tcp_retransmits in %d ms", time.Since(t).Milliseconds())
 
 	loadL7RequestsCount := func(queryName string, protocol model.Protocol) {
 		loadConnection(queryName, func(connection *model.Connection, metric *model.MetricValues) {
@@ -247,6 +276,7 @@ func (c *Constructor) loadContainers(w *model.World, metrics map[string][]*model
 	loadL7RequestsCount("container_nats_messages", model.ProtocolNats)
 	loadL7RequestsCount("container_clickhouse_queries_count", model.ProtocolClickhouse)
 	loadL7RequestsCount("container_zookeeper_requests_count", model.ProtocolZookeeper)
+	klog.Infof("Loaded loadL7RequestsCount in %d ms", time.Since(t).Milliseconds())
 
 	loadL7RequestsLatency := func(queryName string, protocol model.Protocol) {
 		loadConnection(queryName, func(connection *model.Connection, metric *model.MetricValues) {
@@ -263,6 +293,7 @@ func (c *Constructor) loadContainers(w *model.World, metrics map[string][]*model
 	loadL7RequestsLatency("container_cassandra_queries_latency", model.ProtocolCassandra)
 	loadL7RequestsLatency("container_clickhouse_queries_latency", model.ProtocolClickhouse)
 	loadL7RequestsLatency("container_zookeeper_requests_latency", model.ProtocolZookeeper)
+	klog.Infof("Loaded loadL7RequestsLatency in %d ms", time.Since(t).Milliseconds())
 
 	loadL7RequestsHistogram := func(queryName string, protocol model.Protocol) {
 		loadConnection(queryName, func(connection *model.Connection, metric *model.MetricValues) {
@@ -287,6 +318,7 @@ func (c *Constructor) loadContainers(w *model.World, metrics map[string][]*model
 	loadL7RequestsHistogram("container_cassandra_queries_histogram", model.ProtocolCassandra)
 	loadL7RequestsHistogram("container_clickhouse_queries_histogram", model.ProtocolClickhouse)
 	loadL7RequestsHistogram("container_zookeeper_requests_histogram", model.ProtocolZookeeper)
+	klog.Infof("Loaded loadL7RequestsHistogram in %d ms", time.Since(t).Milliseconds())
 
 	loadContainer("container_dns_requests_total", func(instance *model.Instance, container *model.Container, metric *model.MetricValues) {
 		r := model.DNSRequest{
@@ -325,6 +357,7 @@ func (c *Constructor) loadContainers(w *model.World, metrics map[string][]*model
 	loadVolume("container_volume_used", func(volume *model.Volume, metric *model.MetricValues) {
 		volume.UsedBytes = merge(volume.UsedBytes, metric.Values, timeseries.Any)
 	})
+	klog.Infof("Loaded loadVolume in %d ms", time.Since(t).Milliseconds())
 
 	instancesByListen := map[model.Listen]*model.Instance{}
 	for _, app := range w.Applications {
@@ -341,6 +374,7 @@ func (c *Constructor) loadContainers(w *model.World, metrics map[string][]*model
 			}
 		}
 	}
+	klog.Infof("range w.Applications in %d ms", time.Since(t).Milliseconds())
 
 	for _, app := range w.Applications { // lookup remote instance by listen
 		for _, instance := range app.Instances {
@@ -376,6 +410,8 @@ func (c *Constructor) loadContainers(w *model.World, metrics map[string][]*model
 			}
 		}
 	}
+
+	klog.Infof("Loaded lookup remote instance by listen in %d ms", time.Since(t).Milliseconds())
 
 	for _, app := range w.Applications { // creating ApplicationKindExternalService for unknown remote instances
 		for _, instance := range app.Instances {
@@ -415,6 +451,8 @@ func (c *Constructor) loadContainers(w *model.World, metrics map[string][]*model
 		}
 	}
 
+	klog.Infof("Loaded creating ApplicationKindExternalService for unknown remote instances in %d ms", time.Since(t).Milliseconds())
+
 	for _, app := range w.Applications {
 		for _, instance := range app.Instances {
 			for _, u := range instance.Upstreams {
@@ -427,6 +465,8 @@ func (c *Constructor) loadContainers(w *model.World, metrics map[string][]*model
 			}
 		}
 	}
+
+	klog.Infof("Loaded for _, app := range w.Applications in %d ms", time.Since(t).Milliseconds())
 }
 
 func getOrCreateConnection(instance *model.Instance, container string, m *model.MetricValues) *model.Connection {
