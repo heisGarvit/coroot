@@ -95,15 +95,13 @@ func (c *Constructor) getInstanceAndContainer(w *model.World, node *model.Node, 
 	return instance, instance.GetOrCreateContainer(containerId, containerName)
 }
 
-type nodeCache map[model.NodeId]*model.Node
-
 type containerCache struct {
 	mu        sync.Mutex
 	instance  *model.Instance
 	container *model.Container
 }
 
-func (c *Constructor) loadContainers(w *model.World, metrics map[string][]*model.MetricValues, pjs promJobStatuses, nodes nodeCache, containers *utils.ConcurrentMap[model.NodeContainerId, containerCache], servicesByClusterIP map[string]*model.Service, ip2fqdn map[string]*utils.StringSet) {
+func (c *Constructor) loadContainers(w *model.World, metrics map[string][]*model.MetricValues, pjs promJobStatuses, nodes utils.ConcurrentMap[model.NodeId, *model.Node], containers *utils.ConcurrentMap[model.NodeContainerId, *containerCache], servicesByClusterIP map[string]*model.Service, ip2fqdn map[string]*utils.StringSet) {
 	t := time.Now()
 
 	shardingFn := func(instance instanceId) uint32 {
@@ -126,8 +124,10 @@ func (c *Constructor) loadContainers(w *model.World, metrics map[string][]*model
 	loadContainerMetricsFn := func(m *model.MetricValues, f func(instance *model.Instance, container *model.Container, metric *model.MetricValues)) {
 		v, ok := containers.Load(m.NodeContainerId)
 		if !ok {
-			nodeId := model.NewNodeIdFromLabels(m)
-			v.instance, v.container = c.getInstanceAndContainer(w, nodes[nodeId], &instances, m.ContainerId)
+			node, _ := nodes.Load(model.NewNodeIdFromLabels(m))
+			node.Mu.Lock()
+			v.instance, v.container = c.getInstanceAndContainer(w, node, &instances, m.ContainerId)
+			node.Mu.Unlock()
 			containers.Store(m.NodeContainerId, v)
 		}
 		if v.instance == nil || v.container == nil {
@@ -146,7 +146,7 @@ func (c *Constructor) loadContainers(w *model.World, metrics map[string][]*model
 		for _, m := range ms {
 			waitGroup.Add(1)
 			sem <- struct{}{} // acquire a slot
-			go func(m *model.MetricValues) {
+			func(m *model.MetricValues) {
 				loadContainerMetricsFn(m, f)
 				waitGroup.Done()
 				<-sem // release the slot

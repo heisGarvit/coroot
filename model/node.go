@@ -2,6 +2,7 @@ package model
 
 import (
 	"strings"
+	"sync"
 
 	"github.com/coroot/coroot/timeseries"
 )
@@ -55,6 +56,7 @@ func NewNodeIdFromLabels(mv *MetricValues) NodeId {
 }
 
 type Node struct {
+	Mu            sync.RWMutex
 	AgentVersion  LabelLastValue
 	KernelVersion LabelLastValue
 

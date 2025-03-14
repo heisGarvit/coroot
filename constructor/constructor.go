@@ -79,7 +79,7 @@ func (c *Constructor) LoadWorld(ctx context.Context, from, to timeseries.Time, s
 	}
 
 	pjs := promJobStatuses{}
-	nodes := nodeCache{}
+	var nodes utils.ConcurrentMap[model.NodeId, *model.Node]
 	rdsInstancesById := map[string]*model.Instance{}
 	ecInstancesById := map[string]*model.Instance{}
 	servicesByClusterIP := map[string]*model.Service{}
@@ -88,7 +88,7 @@ func (c *Constructor) LoadWorld(ctx context.Context, from, to timeseries.Time, s
 	shardingFn := func(m model.NodeContainerId) uint32 {
 		return utils.Fnv32(m.ContainerId)
 	}
-	containers := utils.NewConcurrentMap[model.NodeContainerId, containerCache](shardingFn, 32)
+	containers := utils.NewConcurrentMap[model.NodeContainerId, *containerCache](shardingFn, 32)
 
 	// order is important
 	prof.stage("load_job_statuses", func() { loadPromJobStatuses(metrics, pjs) })

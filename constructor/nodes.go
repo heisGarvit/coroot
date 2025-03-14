@@ -1,6 +1,7 @@
 package constructor
 
 import (
+	"github.com/coroot/coroot/utils"
 	"strconv"
 	"strings"
 
@@ -10,7 +11,7 @@ import (
 	"github.com/coroot/coroot/timeseries"
 )
 
-func initNodesList(w *model.World, metrics map[string][]*model.MetricValues, nodes nodeCache) {
+func initNodesList(w *model.World, metrics map[string][]*model.MetricValues, nodes utils.ConcurrentMap[model.NodeId, *model.Node]) {
 	nodesBySystemUUID := map[string]*model.Node{}
 	for _, m := range metrics["node_info"] {
 		name := m.Labels["hostname"]
@@ -20,11 +21,11 @@ func initNodesList(w *model.World, metrics map[string][]*model.MetricValues, nod
 			continue
 		}
 		w.IntegrationStatus.NodeAgent.Installed = true
-		node := nodes[id]
-		if node == nil {
+		node, ok := nodes.Load(id)
+		if !ok || node == nil {
 			node = model.NewNode(id)
 			w.Nodes = append(w.Nodes, node)
-			nodes[node.Id] = node
+			nodes.Store(node.Id, node)
 			nodesBySystemUUID[node.Id.SystemUUID] = node
 		}
 		node.Name.Update(m.Values, name)
@@ -41,7 +42,7 @@ func initNodesList(w *model.World, metrics map[string][]*model.MetricValues, nod
 		if node == nil {
 			node = model.NewNode(id)
 			w.Nodes = append(w.Nodes, node)
-			nodes[node.Id] = node
+			nodes.Store(node.Id, node)
 			nodesBySystemUUID[node.Id.SystemUUID] = node
 		}
 		node.K8sName.Update(m.Values, name)
@@ -51,7 +52,7 @@ func initNodesList(w *model.World, metrics map[string][]*model.MetricValues, nod
 	}
 }
 
-func (c *Constructor) loadNodes(w *model.World, metrics map[string][]*model.MetricValues, nodes nodeCache) {
+func (c *Constructor) loadNodes(w *model.World, metrics map[string][]*model.MetricValues, nodes utils.ConcurrentMap[model.NodeId, *model.Node]) {
 	initNodesList(w, metrics, nodes)
 
 	for queryName := range metrics {
@@ -59,8 +60,8 @@ func (c *Constructor) loadNodes(w *model.World, metrics map[string][]*model.Metr
 			continue
 		}
 		for _, m := range metrics[queryName] {
-			node := nodes[model.NewNodeIdFromLabels(m)]
-			if node == nil {
+			node, ok := nodes.Load(model.NewNodeIdFromLabels(m))
+			if !ok || node == nil {
 				continue
 			}
 			switch queryName {

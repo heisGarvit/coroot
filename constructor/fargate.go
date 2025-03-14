@@ -2,13 +2,14 @@ package constructor
 
 import (
 	"fmt"
+	"github.com/coroot/coroot/utils"
 	"strings"
 
 	"github.com/coroot/coroot/model"
 	"github.com/coroot/coroot/timeseries"
 )
 
-func (c *Constructor) loadFargateNodes(metrics map[string][]*model.MetricValues, nodes nodeCache) {
+func (c *Constructor) loadFargateNodes(metrics map[string][]*model.MetricValues, nodes utils.ConcurrentMap[model.NodeId, *model.Node]) {
 	for queryName := range metrics {
 		if !strings.HasPrefix(queryName, "fargate_node_") {
 			continue
@@ -18,8 +19,8 @@ func (c *Constructor) loadFargateNodes(metrics map[string][]*model.MetricValues,
 			if id.MachineID == "" && id.SystemUUID == "" {
 				continue
 			}
-			node := nodes[id]
-			if node == nil {
+			node, ok := nodes.Load(id)
+			if !ok || node == nil {
 				continue
 			}
 			if m.Labels["eks_amazonaws_com_compute_type"] != "fargate" {

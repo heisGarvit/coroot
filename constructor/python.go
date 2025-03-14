@@ -6,7 +6,7 @@ import (
 	"github.com/coroot/coroot/utils"
 )
 
-func (c *Constructor) loadPython(metrics map[string][]*model.MetricValues, containers *utils.ConcurrentMap[model.NodeContainerId, containerCache]) {
+func (c *Constructor) loadPython(metrics map[string][]*model.MetricValues, containers *utils.ConcurrentMap[model.NodeContainerId, *containerCache]) {
 	load := func(queryName string, f func(python *model.Python, metric *model.MetricValues)) {
 		for _, metric := range metrics[queryName] {
 			v, ok := containers.Load(metric.NodeContainerId)
