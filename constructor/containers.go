@@ -123,33 +123,32 @@ func (c *Constructor) loadContainers(w *model.World, metrics map[string][]*model
 
 	rttByInstance := map[instanceId]map[string]*timeseries.TimeSeries{}
 
+	loadContainerMetricsFn := func(m *model.MetricValues, f func(instance *model.Instance, container *model.Container, metric *model.MetricValues)) {
+		v, ok := containers.Load(m.NodeContainerId)
+		if !ok {
+			nodeId := model.NewNodeIdFromLabels(m)
+			v.instance, v.container = c.getInstanceAndContainer(w, nodes[nodeId], &instances, m.ContainerId)
+			containers.Store(m.NodeContainerId, v)
+		}
+		if v.instance == nil || v.container == nil {
+			return
+		}
+		f(v.instance, v.container, m)
+	}
+
 	loadContainer := func(queryName string, f func(instance *model.Instance, container *model.Container, metric *model.MetricValues)) {
-		syncRWLock := sync.RWMutex{}
 		waitGroup := sync.WaitGroup{}
+		sem := make(chan struct{}, 1000) // limit to 1000 goroutines
 
 		ms := metrics[queryName]
 		for _, m := range ms {
-
 			waitGroup.Add(1)
+			sem <- struct{}{} // acquire a slot
 			go func(m *model.MetricValues) {
-				defer waitGroup.Done()
-
-				v, ok := containers.Load(m.NodeContainerId)
-				if !ok {
-					nodeId := model.NewNodeIdFromLabels(m)
-					v.instance, v.container = c.getInstanceAndContainer(w, nodes[nodeId], &instances, m.ContainerId)
-					containers.Store(m.NodeContainerId, v)
-					syncRWLock.Unlock()
-				}
-				if v.instance == nil || v.container == nil {
-					return
-				}
-				syncRWLock.Lock()
-				f(v.instance, v.container, m)
-				syncRWLock.Unlock()
-
+				loadContainerMetricsFn(m, f)
+				waitGroup.Done()
+				<-sem // release the slot
 			}(m)
-
 		}
 
 		waitGroup.Wait()
